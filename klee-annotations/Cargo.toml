@@ -1,0 +1,17 @@
+[package]
+name = "klee-annotations"
+version = "0.1.0"
+authors = ["Alastair Reid <adreid@google.com>"]
+edition = "2018"
+description = "KLEE symbolic execution engine annotation library."
+categories = []
+keywords = ["klee"]
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+
+[features]
+verifier_panic_handler = []
+
+[profile.dev]
+codegen-units = 1

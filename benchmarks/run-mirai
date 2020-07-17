@@ -44,7 +44,7 @@ def runtest_honest(test):
 
     #[no_mangle]
     pub extern "C" fn verifier_main() {
-        verifier::set_panic_hook();
+        klee_annotations::verifier_set_panic_hook();
         main();
     }
 
@@ -80,8 +80,10 @@ def concat_file(infile, suffix, outfile):
 
 
 def rustc(rsfile, llfile):
-  verifier = "../verifier/target/debug/libverifier.rlib"
+  annotations = "../klee-annotations/target/debug/libklee_annotations.rlib"
+  verifier    = "../verifier/target/debug/libverifier.rlib"
   process = subprocess.Popen(['rustc',
+                              '--extern', f"klee_annotations={annotations}",
                               '--extern', f"verifier={verifier}",
                               '--emit=llvm-ir',
                               '-C', 'linker=true',

@@ -9,13 +9,5 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies]
-
 [features]
 verifier-klee = []
-
-[build]
-rustflags = ["-C", "embed-bitcode=yes"]
-
-[profile.dev]
-codegen-units = 1
