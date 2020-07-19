@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import atexit
+import glob
 import os
 import re
 import subprocess
@@ -80,11 +81,15 @@ def concat_file(infile, suffix, outfile):
 
 
 def rustc(rsfile, llfile):
-  annotations = "../klee-annotations/target/debug/libklee_annotations.rlib"
-  verifier    = "../verifier/target/debug/libverifier.rlib"
+  # annotations = glob.glob("../symbolic/target/debug/deps/libklee_annotations*.rlib")[0]
+  annotations = os.path.abspath("../klee-annotations/target/debug/libklee_annotations.rlib")
+  verifier    = os.path.abspath("../verifier/target/debug/libverifier.rlib")
+  symbolic    = os.path.abspath("../symbolic/target/debug/libsymbolic.rlib")
   process = subprocess.Popen(['rustc',
                               '--extern', f"klee_annotations={annotations}",
+                              '--extern', f"klee-annotations={annotations}",
                               '--extern', f"verifier={verifier}",
+                              '--extern', f"symbolic={symbolic}",
                               '--emit=llvm-ir',
                               '-C', 'linker=true',
                               '-C', 'panic=abort',

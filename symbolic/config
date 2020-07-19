@@ -1,0 +1,3 @@
+[build]
+# you can only provide this to nightly, not to stable
+rustflags = ["-Cembed-bitcode=yes"]

@@ -1,0 +1,10 @@
+[package]
+name = "symbolic"
+version = "0.1.0"
+authors = ["Alastair Reid <adreid@google.com>"]
+edition = "2018"
+
+[dependencies.klee-annotations]
+path = "../klee-annotations/"
+features = ["verifier_panic_handler"]
+

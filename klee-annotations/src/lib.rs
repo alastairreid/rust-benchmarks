@@ -28,11 +28,34 @@ pub fn verifier_abstract_value<T: Default>(_t: T) -> T {
     return r;
 }
 
-extern "C" {
-    fn klee_report_error(file: *const raw::c_char, line: usize, message: *const raw::c_char, suffix: *const raw::c_char) -> !;
+// Reject the current execution with a verification failure.
+//
+// In almost all circumstances, verifier_report_error should
+// be used instead because it generates an error message.
+pub fn verifier_abort() -> ! {
+    extern "C" { fn klee_abort() -> !; }
+
+    unsafe { klee_abort() }
 }
 
+// Reject the current execution path with a verification success.
+// This is equivalent to verifier_assume(false)
+// and the opposite of verifier_report_error.
+//
+// Typical usage is in generating symbolic values when the value
+// does not meet some criteria.
+pub fn verifier_reject() -> ! {
+    extern "C" { fn klee_silent_exit(_ignored: u32) -> !; }
+    unsafe { klee_silent_exit(0) }
+}
+
+// Reject the current execution with a verification failure
+// and an error message.
 pub fn verifier_report_error(message: &str) -> ! {
+    extern "C" {
+        fn klee_report_error(file: *const raw::c_char, line: usize, message: *const raw::c_char, suffix: *const raw::c_char) -> !;
+    }
+
     let null = 0 as *const i8;
     let file = null; // ignored by KLEE
     let line = 0;    // ignored by KLEE
