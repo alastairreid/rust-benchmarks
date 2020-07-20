@@ -36,30 +36,15 @@ verbose = False
 def runtest_honest(test):
   if verbose: print(f"Verifying {test}")
 
-  # First, we have to construct a wrapper function that does some
-  # initialization and then calls main.
-  # We attach that to the end of the file being tested.
-  patched_file = tempfile.NamedTemporaryFile(suffix=".rs", dir=".", delete=False).name
-  atexit.register(os.remove, patched_file)
-  wrapper_function = '''
+  if verbose: print(f"  Constructing cargo {test}")
+  # First, build a cargo project with the right dependencies
+  cargodir = mkcargo(test)
 
-    #[no_mangle]
-    pub extern "C" fn verifier_main() {
-        klee_annotations::verifier_set_panic_hook();
-        main();
-    }
-
-  '''
-  concat_file(test, wrapper_function, patched_file)
-
-  if verbose: print(f"  Patching {test}")
   # Second, we compile and link the patched file using LTO to generate the entire
   # application in a single LLVM file
   if verbose: print(f"  Compiling {test}")
-  llfile = tempfile.NamedTemporaryFile(suffix=".ll", dir=".", delete=False).name
-  atexit.register(os.remove, llfile)
-  status = rustc(patched_file, llfile)
-  if status is not None: return status
+  llfile = compile(test, cargodir)
+  if llfile is None: return status_unknown
 
   # Third, we run KLEE and sift through the KLEE output to generate
   # an appropriate status string
@@ -80,24 +65,75 @@ def concat_file(infile, suffix, outfile):
       print(suffix, file=output_file)
 
 
-def rustc(rsfile, llfile):
-  # annotations = glob.glob("../symbolic/target/debug/deps/libklee_annotations*.rlib")[0]
-  annotations = os.path.abspath("../klee-annotations/target/debug/libklee_annotations.rlib")
-  verifier    = os.path.abspath("../verifier/target/debug/libverifier.rlib")
-  symbolic    = os.path.abspath("../symbolic/target/debug/libsymbolic.rlib")
-  process = subprocess.Popen(['rustc',
-                              '--extern', f"klee_annotations={annotations}",
-                              '--extern', f"verifier={verifier}",
-                              '--extern', f"symbolic={symbolic}",
-                              '--emit=llvm-ir',
-                              '--edition=2018',
-                              '-C', 'linker=true',
-                              '-C', 'panic=abort',
-                              '-C', 'lto',
-                              '-W', 'arithmetic-overflow',
-                              '--cfg', 'feature="verifier-klee"',
-                              '-o', llfile,
-                              rsfile],
+def mkcargo(test):
+  cargodir = tempfile.TemporaryDirectory(dir=".", prefix="tmpcargo-").name
+  # atexit.register(os.remove, cargodir) # todo: use cleanup() method?
+  if verbose: print(f"Creating cargo project {cargodir}")
+  os.system(f"cargo new {cargodir} --bin --quiet")
+
+  # First, we have to construct a wrapper function that does some
+  # initialization and then calls main.
+  # We attach that to the end of the file being tested.
+  wrapper_function = '''
+
+    #[no_mangle]
+    pub extern "C" fn verifier_main() {
+        klee_annotations::verifier_set_panic_hook();
+        main();
+    }
+
+  '''
+  concat_file(test, wrapper_function, f"{cargodir}/src/main.rs")
+
+  # Second, add dependencies, etc. to the cargo file
+  toml_file = f"{cargodir}/Cargo.toml"
+  with open(toml_file, "w") as f:
+    f.write(f"""
+[package]
+name = 'test'
+edition = '2018'
+version = '0.0.1'
+            """)
+
+    annotations = "../../klee-annotations"
+    verifier    = "../../verifier"
+    symbolic    = "../../symbolic"
+    f.write("""
+[dependencies]
+klee-annotations = { path = "%s", features = [ "verifier-panic-handler" ] }
+verifier = { path = "%s", features = [ "verifier-klee" ] }
+symbolic = { path = "%s", features=[] }
+
+[profile.dev]
+overflow-checks=true
+lto=true
+# panic="abort"
+incremental=false
+opt-level=0
+debug=false
+debug-assertions=true
+# overflow-checks=true
+rpath=false
+codegen-units=1
+            """ % (annotations, verifier, symbolic))
+
+  return cargodir
+
+
+def compile(test, cargodir):
+  rustflags = [
+      '-Clinker=/bin/true',
+      '-Clto',
+      '--emit=llvm-ir',
+      '-Cpanic=abort',
+      '-Warithmetic-overflow',
+      '--cfg', 'feature="verifier-klee"'
+  ]
+  flags = ["-v"] if verbose else []
+  process = subprocess.Popen(['/usr/bin/env', 'cargo', 'build'] + flags,
+                             cwd=cargodir,
+                             env = { "RUSTFLAGS": " ".join(rustflags)
+                                    , "PATH": os.environ["PATH"] },
                              stdout=subprocess.PIPE, 
                              stderr=subprocess.PIPE)
   if verbose: print("    ", " ".join(process.args))
@@ -108,8 +144,10 @@ def rustc(rsfile, llfile):
     if verbose:
         print(stdout.decode("utf-8"))
         print(stderr.decode("utf-8"))
-    return status_unknown
-  return None
+    return None
+
+  llfile = glob.glob(f"{cargodir}/target/debug/deps/test*.ll")[0]
+  return llfile
 
 def klee(llfile, entry):
   process = subprocess.Popen(['klee',

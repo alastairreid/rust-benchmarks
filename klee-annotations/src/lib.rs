@@ -1,4 +1,4 @@
-#![cfg_attr(feature = "verifier_panic_handler", feature(panic_info_message))]
+#![cfg_attr(feature = "verifier-panic-handler", feature(panic_info_message))]
 
 use std::os::raw;
 use std::ffi::CString;
@@ -68,13 +68,13 @@ pub fn verifier_report_error(message: &str) -> ! {
     }
 }
 
-#[cfg(feature = "verifier_panic_handler")]
+#[cfg(feature = "verifier-panic-handler")]
 use core::panic::PanicInfo;
 
-#[cfg(feature = "verifier_panic_handler")]
+#[cfg(feature = "verifier-panic-handler")]
 use std::fmt::Write;
 
-#[cfg(feature = "verifier_panic_handler")]
+#[cfg(feature = "verifier-panic-handler")]
 fn verifier_panic_hook(info: &PanicInfo) {
     let mut message = String::new();
     match info.message() {
@@ -86,7 +86,7 @@ fn verifier_panic_hook(info: &PanicInfo) {
 
 // Calling this before starting verification ensures that
 // panic messages are displayed by KLEE.
-#[cfg(feature = "verifier_panic_handler")]
+#[cfg(feature = "verifier-panic-handler")]
 pub fn verifier_set_panic_hook() {
     std::panic::set_hook(Box::new(verifier_panic_hook))
 }
