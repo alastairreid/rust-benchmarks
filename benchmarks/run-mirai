@@ -87,10 +87,10 @@ def rustc(rsfile, llfile):
   symbolic    = os.path.abspath("../symbolic/target/debug/libsymbolic.rlib")
   process = subprocess.Popen(['rustc',
                               '--extern', f"klee_annotations={annotations}",
-                              '--extern', f"klee-annotations={annotations}",
                               '--extern', f"verifier={verifier}",
                               '--extern', f"symbolic={symbolic}",
                               '--emit=llvm-ir',
+                              '--edition=2018',
                               '-C', 'linker=true',
                               '-C', 'panic=abort',
                               '-C', 'lto',
