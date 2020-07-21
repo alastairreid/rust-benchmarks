@@ -35,7 +35,7 @@ def runtest_cheat(test):
 verbose = False
 
 # This verifier compiles a Rust file and uses KLEE to detect violations
-def runtest_honest(test):
+def runtest_honest(test, klee_flags):
   if verbose: print(f"Checking {colored(test, 'white', attrs=['bold'])}")
 
   if verbose: print(f"  Constructing cargo for {test}")
@@ -53,7 +53,7 @@ def runtest_honest(test):
   # Third, we run KLEE and sift through the KLEE output to generate
   # an appropriate status string
   if verbose: print(f"  Running KLEE to verify {test}")
-  status = klee(llfile, "verifier_main")
+  status = klee(llfile, "verifier_main", klee_flags)
   if status is not None:
     if verbose: print(colored(f"  FAILED: {test} failed verification", 'red'))
     return status
@@ -155,12 +155,13 @@ def compile(test, cargodir):
   llfile = glob.glob(f"{cargodir}/target/debug/deps/test*.ll")[0]
   return llfile
 
-def klee(llfile, entry):
+def klee(llfile, entry, klee_flags):
   process = subprocess.Popen(['klee',
                               '--entry-point='+entry,
                               '--exit-on-error',
-                              '--silent-klee-assume',
-                              llfile],
+                              '--silent-klee-assume']
+                             +klee_flags
+                             +[llfile],
                              stdout=subprocess.PIPE, 
                              stderr=subprocess.PIPE)
   stdout, stderr = process.communicate()
@@ -179,6 +180,10 @@ def klee(llfile, entry):
       pass
     elif l.startswith(b"KLEE: done:"):
       pass
+    elif l.startswith(b"KLEE: HaltTimer invoked"):
+      return status_timeout
+    elif l.startswith(b"KLEE: halting execution, dumping remaining states"):
+      return status_timeout
     elif l.startswith(b"KLEE: ERROR:") and b"unreachable" in l:
       return status_reachable
     elif l.startswith(b"KLEE: ERROR:") and b"overflow" in l:
@@ -204,8 +209,9 @@ def main():
     verbose = True
     del sys.argv[1]
   test = sys.argv[1]
+  klee_flags = sys.argv[2:]
 
-  status = runtest_honest(test)
+  status = runtest_honest(test, klee_flags)
   if  status: print(status)
   exit(0) # exit status doesn't seem to be important, but use 0
 
