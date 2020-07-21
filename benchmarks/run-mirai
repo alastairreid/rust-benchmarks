@@ -8,6 +8,8 @@ import subprocess
 import sys
 import tempfile
 
+from termcolor import colored
+
 # legal responses from this script
 # (to match the regtest.py script)
 status_timeout   = "SMACK timed out"
@@ -34,9 +36,9 @@ verbose = False
 
 # This verifier compiles a Rust file and uses KLEE to detect violations
 def runtest_honest(test):
-  if verbose: print(f"Verifying {test}")
+  if verbose: print(f"Checking {colored(test, 'white', attrs=['bold'])}")
 
-  if verbose: print(f"  Constructing cargo {test}")
+  if verbose: print(f"  Constructing cargo for {test}")
   # First, build a cargo project with the right dependencies
   cargodir = mkcargo(test)
 
@@ -44,17 +46,22 @@ def runtest_honest(test):
   # application in a single LLVM file
   if verbose: print(f"  Compiling {test}")
   llfile = compile(test, cargodir)
-  if llfile is None: return status_unknown
+  if llfile is None:
+    if verbose: print(colored(f"  FAILED: Test {test} compilation error", 'red'))
+    return status_unknown
 
   # Third, we run KLEE and sift through the KLEE output to generate
   # an appropriate status string
-  if verbose: print(f"  Running KLEE to verify function")
+  if verbose: print(f"  Running KLEE to verify {test}")
   status = klee(llfile, "verifier_main")
-  if status is not None: return status
+  if status is not None:
+    if verbose: print(colored(f"  FAILED: {test} failed verification", 'red'))
+    return status
 
   # If nothing went wrong, report successful verification
   # (But we are using symbolic execution which may not explore all paths
   # so this really means that no bugs have been found.)
+  if verbose: print(colored(f"  PASSED: {test}", 'green'))
   return status_verified
 
 def concat_file(infile, suffix, outfile):
@@ -68,7 +75,7 @@ def concat_file(infile, suffix, outfile):
 def mkcargo(test):
   cargodir = tempfile.TemporaryDirectory(dir=".", prefix="tmpcargo-").name
   # atexit.register(os.remove, cargodir) # todo: use cleanup() method?
-  if verbose: print(f"Creating cargo project {cargodir}")
+  if verbose: print(f"  Creating cargo project {cargodir}")
   os.system(f"cargo new {cargodir} --bin --quiet")
 
   # First, we have to construct a wrapper function that does some
@@ -136,7 +143,6 @@ def compile(test, cargodir):
                                     , "PATH": os.environ["PATH"] },
                              stdout=subprocess.PIPE, 
                              stderr=subprocess.PIPE)
-  if verbose: print("    ", " ".join(process.args))
   stdout, stderr = process.communicate()
   if process.returncode != 0:
     print("Couldn't compile")
@@ -197,7 +203,6 @@ def main():
     global verbose # How do I hate Python? Let me count the ways.
     verbose = True
     del sys.argv[1]
-    print("Verbose mode enabled")
   test = sys.argv[1]
 
   status = runtest_honest(test)
