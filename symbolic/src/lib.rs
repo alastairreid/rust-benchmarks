@@ -1,17 +1,18 @@
 use klee_annotations::*;
-// use core::cell::{Cell, RefCell, UnsafeCell};
-// use core::iter;
+use core::cell::{Cell, RefCell, UnsafeCell};
+use core::iter;
 use core::mem;
 use core::ops::{Range, RangeBounds, RangeFrom, RangeInclusive, RangeTo, RangeToInclusive};
-// use core::str;
-// use core::time::Duration;
-// use std::borrow::{Cow, ToOwned};
-// use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque};
-// use std::ffi::{CString, OsString};
-// use std::path::PathBuf;
-// use std::rc::Rc;
-// use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering};
-// use std::sync::{Arc, Mutex};
+use core::str;
+use core::time::Duration;
+use std::borrow::{Cow, ToOwned};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque};
+use std::ffi::{CString, OsString};
+use std::path::PathBuf;
+use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize};
+use std::sync::{Arc, Mutex};
+use std::marker::PhantomData;
 
 pub trait Symbolic: 'static {
     /// Generate a symbolic value of `Self`.
@@ -71,6 +72,24 @@ impl Symbolic for char {
             Some(r) => r,
             None => verifier_reject()
         }
+    }
+}
+
+impl Symbolic for AtomicBool {
+    fn symbolic() -> Self {
+        Self::new(Symbolic::symbolic())
+    }
+}
+
+impl Symbolic for AtomicIsize {
+    fn symbolic() -> Self {
+        Self::new(Symbolic::symbolic())
+    }
+}
+
+impl Symbolic for AtomicUsize {
+    fn symbolic() -> Self {
+        Self::new(Symbolic::symbolic())
     }
 }
 
@@ -200,3 +219,197 @@ impl_range!(
     S,
     unbounded_range(|b| ..=b)
 );
+
+impl Symbolic for Duration {
+    fn symbolic() -> Self {
+        Self::new(<u64 as Symbolic>::symbolic(),
+                  <u32 as Symbolic>::symbolic() % 1_000_000_000,
+                  )
+    }
+}
+
+// todo: does this work well for symbolic execution???
+pub struct SymbolicIter<'a, S> {
+    size: usize,
+    _marker: PhantomData<&'a S>,
+}
+
+pub fn symbolic_iter<'a, S: Symbolic>() -> SymbolicIter<'a, S> {
+    let size = Symbolic::symbolic();
+    SymbolicIter {
+        size,
+        _marker: PhantomData,
+    }
+}
+
+impl <'a, S: Symbolic> Iterator for SymbolicIter<'a, S> {
+    type Item = S;
+    fn next(&mut self) -> Option<S> {
+        if self.size == 0 {
+            None
+        } else {
+            self.size -= 1;
+            Some(Symbolic::symbolic())
+        }
+    }
+}
+
+impl<A: Symbolic> Symbolic for Vec<A> {
+    fn symbolic() -> Self {
+        symbolic_iter().collect()
+    }
+}
+
+impl<K: Symbolic + Ord, V: Symbolic> Symbolic for BTreeMap<K, V> {
+    fn symbolic() -> Self {
+        symbolic_iter().collect()
+    }
+}
+
+impl<A: Symbolic + Ord> Symbolic for BTreeSet<A> {
+    fn symbolic() -> Self {
+        symbolic_iter().collect()
+    }
+}
+
+impl<A: Symbolic + Ord> Symbolic for BinaryHeap<A> {
+    fn symbolic() -> Self {
+        symbolic_iter().collect()
+    }
+}
+
+impl<K: Symbolic + Eq + ::std::hash::Hash, V: Symbolic> Symbolic for HashMap<K, V> {
+    fn symbolic() -> Self {
+        symbolic_iter().collect()
+    }
+}
+
+impl<A: Symbolic + Eq + ::std::hash::Hash> Symbolic for HashSet<A> {
+    fn symbolic() -> Self {
+        symbolic_iter().collect()
+    }
+}
+
+impl<A: Symbolic> Symbolic for LinkedList<A> {
+    fn symbolic() -> Self {
+        symbolic_iter().collect()
+    }
+}
+
+impl<A: Symbolic> Symbolic for VecDeque<A> {
+    fn symbolic() -> Self {
+        symbolic_iter().collect()
+    }
+}
+
+impl<A: Symbolic> Symbolic for Cow<'static, A>
+where
+    A: ToOwned + ?Sized,
+    <A as ToOwned>::Owned: Symbolic,
+{
+    fn symbolic() -> Self {
+        Cow::Owned(Symbolic::symbolic())
+    }
+}
+
+impl Symbolic for String {
+    fn symbolic() -> Self {
+        let bytes = Symbolic::symbolic();
+        match String::from_utf8(bytes) {
+            Ok(r) => r,
+            Err(_) => verifier_reject()
+        }
+    }
+}
+
+impl Symbolic for CString {
+    fn symbolic() -> Self {
+        let x: Vec<u8> = Symbolic::symbolic();
+        x.iter().all(|&c| c != 0);
+        Self::new(x).unwrap()
+    }
+}
+
+impl Symbolic for OsString {
+    fn symbolic() -> Self {
+        From::from(<String as Symbolic>::symbolic())
+    }
+}
+
+impl Symbolic for PathBuf {
+    fn symbolic() -> Self {
+        From::from(<OsString as Symbolic>::symbolic())
+    }
+}
+
+impl<S: Symbolic> Symbolic for Box<S> {
+    fn symbolic() -> Self {
+        Self::new(Symbolic::symbolic())
+    }
+}
+
+impl<S: Symbolic> Symbolic for Box<[S]> {
+    fn symbolic() -> Self {
+        <Vec<S> as Symbolic>::symbolic().into_boxed_slice()
+    }
+}
+
+impl Symbolic for Box<str> {
+    fn symbolic() -> Self {
+        <String as Symbolic>::symbolic().into_boxed_str()
+    }
+}
+
+impl<S: Symbolic> Symbolic for Arc<S> {
+    fn symbolic() -> Self {
+        Self::new(Symbolic::symbolic())
+    }
+}
+
+impl<S: Symbolic> Symbolic for Rc<S> {
+    fn symbolic() -> Self {
+        Self::new(Symbolic::symbolic())
+    }
+}
+
+impl<S: Symbolic> Symbolic for Cell<S> {
+    fn symbolic() -> Self {
+        Self::new(Symbolic::symbolic())
+    }
+}
+
+impl<S: Symbolic> Symbolic for RefCell<S> {
+    fn symbolic() -> Self {
+        Self::new(Symbolic::symbolic())
+    }
+}
+
+impl<S: Symbolic> Symbolic for UnsafeCell<S> {
+    fn symbolic() -> Self {
+        Self::new(Symbolic::symbolic())
+    }
+}
+
+impl<S: Symbolic> Symbolic for Mutex<S> {
+    fn symbolic() -> Self {
+        Self::new(Symbolic::symbolic())
+    }
+}
+
+impl<S: Symbolic> Symbolic for iter::Empty<S> {
+    fn symbolic() -> Self {
+        iter::empty()
+    }
+}
+
+impl<S: Symbolic> Symbolic for ::std::marker::PhantomData<S> {
+    fn symbolic() -> Self {
+        ::std::marker::PhantomData
+    }
+}
+
+impl<S: Symbolic> Symbolic for ::std::num::Wrapping<S> {
+    fn symbolic() -> Self {
+        ::std::num::Wrapping(Symbolic::symbolic())
+    }
+}
