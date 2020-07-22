@@ -105,11 +105,13 @@ version = '0.0.1'
     annotations = "../../klee-annotations"
     verifier    = "../../verifier"
     symbolic    = "../../symbolic"
+    symbolic2   = "../../symbolic2"
     f.write("""
 [dependencies]
 klee-annotations = { path = "%s", features = [ "verifier-panic-handler" ] }
 verifier = { path = "%s", features = [ "verifier-klee" ] }
 symbolic = { path = "%s", features=[] }
+symbolic2= { path = "%s", features=[] }
 
 [profile.dev]
 overflow-checks=true
@@ -122,7 +124,7 @@ debug-assertions=true
 # overflow-checks=true
 rpath=false
 codegen-units=1
-            """ % (annotations, verifier, symbolic))
+            """ % (annotations, verifier, symbolic, symbolic2))
 
   return cargodir
 
