@@ -2,7 +2,7 @@ use klee_annotations::*;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap, LinkedList};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque, LinkedList};
 // use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque};
 
 // Trait for generating symbolic values
@@ -395,6 +395,36 @@ where
         let mut v = Vec::with_capacity(len);
         for _ in 0..len {
             v.push(self.elements.value());
+        }
+        v
+    }
+}
+
+pub struct VecDequeStrategy<S: Strategy> {
+    size: usize, // concrete size to be more friendly to concolic/DSE
+    elements: S,
+}
+impl<S: Strategy> VecDequeStrategy<S> {
+    pub fn new(size: usize, elements: S) -> Self {
+        Self {
+            size,
+            elements,
+        }
+    }
+}
+impl<S: Strategy> Strategy for VecDequeStrategy<S>
+where
+    S: Strategy + Clone,
+{
+    type Value = VecDeque<S::Value>;
+    fn value(&self) -> Self::Value {
+        // Note that choosing a small, symbolic size causes KLEE to complain so
+        // the length must be concrete.
+        // let len = Strategy::value(&(..=self.size));
+        let len = self.size;
+        let mut v = VecDeque::with_capacity(len);
+        for _ in 0..len {
+            v.push_front(self.elements.value());
         }
         v
     }
