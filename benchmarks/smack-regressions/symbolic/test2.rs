@@ -11,10 +11,14 @@ pub fn main() {
     // As a really crude hack to avoid the number of paths
     // exploding under symbolic execution, we explore
     // the following in parallel (well, kinda... )
+    // A better fix would be to split this file into
+    // multiple files.
     if klee_annotations::verifier_abstract_value(false) {
         test_btreemap1();
-    } else {
+    } else if klee_annotations::verifier_abstract_value(false) {
         test_btreeset1();
+    } else {
+        test_binaryheap1();
     }
 }
 
@@ -84,5 +88,22 @@ pub fn test_btreeset1() {
 
     for x in v.iter() {
         verifier::assert!((-100..100i32).contains(x));
+    }
+}
+
+pub fn test_binaryheap1() {
+    let ks = 0..100u32;
+    let s = symbolic2::BinaryHeapStrategy::new(5, ks);
+    let v = Strategy::value(&s);
+    verifier::assert!(v.len() == 5);
+    for x in v.iter() {
+        verifier::assert!(*x < 100);
+    }
+
+    // check first element larger than rest
+    let mut v1 = v;
+    let x0 = v1.pop().unwrap();
+    for x in v1.iter() {
+        verifier::assert!(*x <= x0);
     }
 }

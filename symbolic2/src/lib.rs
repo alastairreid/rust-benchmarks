@@ -2,7 +2,7 @@ use klee_annotations::*;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
 // use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque};
 
 // Trait for generating symbolic values
@@ -470,6 +470,46 @@ where
         let mut k = self.members.value();
         for _ in 0..len {
             r.insert(k);
+            let next = self.members.value();
+            verifier_assume(k <= next); // generate entries in fixed order
+            k = next;
+        }
+        r
+    }
+}
+
+pub struct BinaryHeapStrategy<A: Strategy> {
+    size: usize, // concrete size to be more friendly to concolic/DSE
+    members: A,
+}
+impl<A: Strategy> BinaryHeapStrategy<A> {
+    pub fn new(size: usize, members: A) -> Self {
+        Self {
+            size,
+            members,
+        }
+    }
+}
+impl<A: Strategy> Strategy for BinaryHeapStrategy<A>
+where
+    A::Value : Ord + Copy
+{
+    type Value = BinaryHeap<A::Value>;
+    fn value(&self) -> Self::Value {
+        // Having a range of sizes up to some limit is acceptable
+        // but I think it adds some overhead with little gain.
+        // let len = Strategy::value(&(..=self.size));
+        let len = self.size;
+        let mut r = BinaryHeap::with_capacity(len);
+
+        // Keys are generated in increasing order to
+        // reduce the number of effectively equivalent
+        // paths through the generation code.
+        // (This would not be a good idea if we were checking BinaryHeap
+        // but our goal is to checking code that uses BinaryHeap.)
+        let mut k = self.members.value();
+        for _ in 0..len {
+            r.push(k);
             let next = self.members.value();
             verifier_assume(k <= next); // generate entries in fixed order
             k = next;
