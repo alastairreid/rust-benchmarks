@@ -2,10 +2,28 @@ use klee_annotations::*;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+use std::collections::{BTreeMap};
+// use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque};
+
+// Trait for generating symbolic values
+//
+// Implementations of this trait are datatypes such as Any, Const, VecStrategy, etc.
+// and, in some cases, these datatypes mirror the type structure for which they
+// generate values.
+//
+// Strategies for composite types (tuples, vectors, etc.) typically contain
+// strategies for generating components of that type (e.g., the struct fields,
+// array/vector elements, etc.)
 pub trait Strategy {
     type Value;
     fn value(&self) -> Self::Value;
 }
+
+// The remainder of this file consists of implementations of the Strategy trait.
+// In most cases, this consists of defining a new struct type to represent
+// the strategy, defining functions to construct that struct type and
+// then implementing the Strategy trait for that type.
+
 
 // The most trivial strategy
 pub struct Const<T> {
@@ -25,7 +43,6 @@ impl<T: Copy> Strategy for Const<T> {
     }
 }
 
-// For primitive types, all possible values are legal
 pub struct Any<T> {
     _marker: PhantomData<T>,
 }
@@ -57,11 +74,11 @@ impl Strategy for Any<char> {
     }
 }
 
-pub struct Filter<S, F> {
+pub struct Filter<S: Strategy, F> {
     source: S,
     fun: Arc<F>,
 }
-impl<S, F> Filter<S, F> {
+impl<S: Strategy, F> Filter<S, F> {
     pub fn new(source: S, fun: F) -> Self {
         Self {
             source,
@@ -78,11 +95,11 @@ impl<S: Strategy, F: Fn(&S::Value) -> bool> Strategy for Filter<S, F> {
     }
 }
 
-pub struct Map<S, F> {
+pub struct Map<S: Strategy, F> {
     source: S,
     fun: Arc<F>,
 }
-impl<S, F> Map<S, F> {
+impl<S: Strategy, F> Map<S, F> {
     pub fn new(source: S, fun: F) -> Self {
         Self {
             source,
@@ -197,11 +214,11 @@ strategic_tuple!{0=>A; 1=>B; 2=>C; 3=>D; 4=>E; 5=>F; 6=>G; 7=>H; 8=>I; 9=>J; 10=
 strategic_tuple!{0=>A; 1=>B; 2=>C; 3=>D; 4=>E; 5=>F; 6=>G; 7=>H; 8=>I; 9=>J; 10=>K; 11=>L;}
 
 // Array strategy where S is element strategy and T is [S::Value; n] for some n
-pub struct ArrayStrategy<S, T> {
+pub struct ArrayStrategy<S: Strategy, T> {
     s: S,
     _marker: PhantomData<T>,
 }
-impl<S, T> ArrayStrategy<S, T> {
+impl<S: Strategy, T> ArrayStrategy<S, T> {
     pub fn new(s: S) -> Self {
         Self {
             s,
@@ -302,12 +319,10 @@ small_array!(32 uniform32: a0, a1, a2, a3, a4, a5, a6, a7, a8, a9,
                            a20, a21, a22, a23, a24, a25, a26, a27, a28, a29,
                            a30, a31);
 
-
-
-pub struct OptionStrategy<S> {
+pub struct OptionStrategy<S: Strategy> {
     s: S,
 }
-impl<S> OptionStrategy<S> {
+impl<S: Strategy> OptionStrategy<S> {
     pub fn new(s: S) -> Self {
         Self {
             s,
@@ -328,11 +343,11 @@ where
     }
 }
 
-pub struct ResultStrategy<A, B> {
+pub struct ResultStrategy<A: Strategy, B: Strategy> {
     a: A,
     b: B,
 }
-impl<A, B> ResultStrategy<A, B> {
+impl<A: Strategy, B: Strategy> ResultStrategy<A, B> {
     pub fn new(a: A, b: B) -> Self {
         Self {
             a,
@@ -355,11 +370,11 @@ where
     }
 }
 
-pub struct VecStrategy<S> {
+pub struct VecStrategy<S: Strategy> {
     size: usize, // concrete size to be more friendly to concolic/DSE
     elements: S,
 }
-impl<S> VecStrategy<S> {
+impl<S: Strategy> VecStrategy<S> {
     pub fn new(size: usize, elements: S) -> Self {
         Self {
             size,
@@ -377,11 +392,39 @@ where
         // the length must be concrete.
         // let len = Strategy::value(&(..=self.size));
         let len = self.size;
-        let mut vec = Vec::with_capacity(len);
+        let mut v = Vec::with_capacity(len);
         for _ in 0..len {
-            vec.push(self.elements.value());
+            v.push(self.elements.value());
         }
-        vec
+        v
     }
 }
 
+pub struct BTreeMapStrategy<K: Strategy, V: Strategy> {
+    size: usize, // concrete size to be more friendly to concolic/DSE
+    keys: K,
+    values: V,
+}
+impl<K: Strategy, V: Strategy> BTreeMapStrategy<K, V> {
+    pub fn new(size: usize, keys: K, values: V) -> Self {
+        Self {
+            size,
+            keys,
+            values,
+        }
+    }
+}
+impl<K: Strategy, V: Strategy> Strategy for BTreeMapStrategy<K, V>
+where
+    K::Value : Ord
+{
+    type Value = BTreeMap<K::Value, V::Value>;
+    fn value(&self) -> Self::Value {
+        let len = Strategy::value(&(..=self.size));
+        let mut v = BTreeMap::new();
+        for _ in 0..len {
+            v.insert(self.keys.value(), self.values.value());
+        }
+        v
+    }
+}
