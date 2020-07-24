@@ -17,8 +17,10 @@ pub fn main() {
         test_btreemap1();
     } else if klee_annotations::verifier_abstract_value(false) {
         test_btreeset1();
-    } else {
+    } else if klee_annotations::verifier_abstract_value(false) {
         test_binaryheap1();
+    } else {
+        test_linkedlist1();
     }
 }
 
@@ -52,6 +54,16 @@ pub fn test_range2() {
 pub fn test_vec1() {
     let e = 0..10u32;
     let s = symbolic2::VecStrategy::new(5, e);
+    let v = Strategy::value(&s);
+    verifier::assert!(v.len() == 5);
+    for x in &v {
+        verifier::assert!(*x < 10);
+    }
+}
+
+pub fn test_linkedlist1() {
+    let e = 0..10u32;
+    let s = symbolic2::ListStrategy::new(5, e);
     let v = Strategy::value(&s);
     verifier::assert!(v.len() == 5);
     for x in &v {

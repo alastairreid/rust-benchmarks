@@ -2,7 +2,7 @@ use klee_annotations::*;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, LinkedList};
 // use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque};
 
 // Trait for generating symbolic values
@@ -395,6 +395,33 @@ where
         let mut v = Vec::with_capacity(len);
         for _ in 0..len {
             v.push(self.elements.value());
+        }
+        v
+    }
+}
+
+pub struct ListStrategy<S: Strategy> {
+    size: usize, // concrete size to be more friendly to concolic/DSE
+    elements: S,
+}
+impl<S: Strategy> ListStrategy<S> {
+    pub fn new(size: usize, elements: S) -> Self {
+        Self {
+            size,
+            elements,
+        }
+    }
+}
+impl<S: Strategy> Strategy for ListStrategy<S>
+where
+    S: Strategy + Clone,
+{
+    type Value = LinkedList<S::Value>;
+    fn value(&self) -> Self::Value {
+        let len = self.size;
+        let mut v = LinkedList::new();
+        for _ in 0..len {
+            v.push_front(self.elements.value());
         }
         v
     }
