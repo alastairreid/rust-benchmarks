@@ -416,15 +416,26 @@ impl<K: Strategy, V: Strategy> BTreeMapStrategy<K, V> {
 }
 impl<K: Strategy, V: Strategy> Strategy for BTreeMapStrategy<K, V>
 where
-    K::Value : Ord
+    K::Value : Ord + Copy
 {
     type Value = BTreeMap<K::Value, V::Value>;
     fn value(&self) -> Self::Value {
-        let len = Strategy::value(&(..=self.size));
-        let mut v = BTreeMap::new();
+        // Having a range of sizes up to some limit is acceptable
+        // but I think it adds some overhead with little gain.
+        // let len = Strategy::value(&(..=self.size));
+        let len = self.size;
+        let mut r = BTreeMap::new();
+
+        // Keys are generated in increasing order to
+        // reduce the number of effectively equivalent
+        // paths through the generation code.
+        let mut k = self.keys.value();
         for _ in 0..len {
-            v.insert(self.keys.value(), self.values.value());
+            r.insert(k, self.values.value());
+            let next = self.keys.value();
+            verifier_assume(k <= next); // generate entries in fixed order
+            k = next;
         }
-        v
+        r
     }
 }

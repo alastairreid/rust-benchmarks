@@ -7,7 +7,7 @@ pub fn main() {
     test_range1();
     test_range2();
     test_vec1();
-    // test_btree1();
+    test_btree1();
 }
 
 use symbolic2::Strategy;
@@ -56,16 +56,10 @@ pub fn test_btree1() {
     // so the following assertion will fail.
     // verifier::assert!(v.len() == 5);
 
-    // This assertion takes a long time to check
-    // verifier::assert!(v.len() <= 5);
+    verifier::assert!(v.len() <= 5);
 
-    // This loop takes a long time to check
     for (key, value) in v.iter() {
+        verifier::assert!((-5..5i32).contains(key));
+        verifier::assert!((*value) > 5);
     }
-
-    // And this loop is bad too
-    // for (key, value) in v.iter() {
-    //     verifier::assert!((-5..5i32).contains(key));
-    //     verifier::assert!((*value) > 0);
-    // }
 }
