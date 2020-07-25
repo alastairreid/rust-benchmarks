@@ -19,6 +19,17 @@ pub trait Strategy {
     fn value(&self) -> Self::Value;
 }
 
+#[macro_export]
+macro_rules! verify {
+  (($($parm:pat in $strategy:expr),+) $body:block)
+  => {
+    pub fn main() {
+        $(let $parm = $crate::Strategy::value(&$strategy);)*
+        $body
+    }
+  };
+}
+
 // The remainder of this file consists of implementations of the Strategy trait.
 // In most cases, this consists of defining a new struct type to represent
 // the strategy, defining functions to construct that struct type and
