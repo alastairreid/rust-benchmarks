@@ -16,6 +16,7 @@ pub fn verifier_verify(cond: bool) {
 }
 
 pub fn verifier_abstract_value<T: Default>(_t: T) -> T {
+    #[link(name = "kleeRuntest")]
     extern "C" { fn klee_make_symbolic(data: *mut raw::c_void, length: usize, name: *const raw::c_char); }
 
     let mut r = T::default();
