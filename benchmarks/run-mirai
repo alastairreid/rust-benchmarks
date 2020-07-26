@@ -55,12 +55,11 @@ def runtest_honest(test, klee_flags):
   if verbose: print(f"  Running KLEE to verify {test}")
   status = klee(llfile, "verifier_main", klee_flags)
   if status is not None:
-    if verbose: print(colored(f"  FAILED: {test} failed verification", 'red'))
 
     if verbose:
       cmd = f"{cargodir}/target/debug/test"
       for t in glob.glob(f"{cargodir}/target/debug/deps/klee-last/test*.ktest"):
-        print(f"  Rerunning with test {t}")
+        print(f"Rerunning with test {t}")
         process = subprocess.Popen([cmd],
                                    env = { "KTEST_FILE": t },
                                    stdout=subprocess.PIPE,
@@ -68,6 +67,8 @@ def runtest_honest(test, klee_flags):
         stdout, stderr = process.communicate()
         print(stdout.decode("utf-8"))
         print(stderr.decode("utf-8"))
+
+    if verbose: print(colored(f"  FAILED: {test} failed verification", 'red'))
 
     return status
 
@@ -217,7 +218,16 @@ def klee(llfile, entry, klee_flags):
       return status_overflow
     elif l.startswith(b"KLEE: ERROR:"):
       print(l)
-      if verbose: print(stderr.decode("utf-8"))
+      if verbose:
+        for l in stderr.decode("utf-8").splitlines():
+          if l.startswith("KLEE: WARNING"):
+            pass
+          elif l.startswith("KLEE: Using"):
+            pass
+          elif l.startswith("KLEE: NOTE"):
+            pass
+          else:
+            print(l)
       return status_error
     elif l != b'':
       print(l)
