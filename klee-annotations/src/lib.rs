@@ -1,7 +1,6 @@
 #![cfg_attr(feature = "verifier-panic-handler", feature(panic_info_message))]
 
 use std::os::raw;
-use std::ffi::CString;
 use std::default::Default;
 
 pub fn verifier_assume(cond: bool) {
@@ -70,6 +69,26 @@ pub fn verifier_report_error(message: &str) -> ! {
 	}
 }
 
+// (In part because pthread support is broken at the moment)
+// we only want to display values when running with the ktest runtime
+// so we need a way to tell which mode we are running in.
+//
+// The following is a disgusting hack where we create a symbolic
+// value and then call "klee_is_symbolic()" on it.
+// This function is not implemented by the ktest runtime - but
+// we can add our own definition at link time.
+// (Did I mention that this was a hack?)
+pub fn verifier_is_ktest() -> bool {
+    #[link(name = "kleeHack")]
+    extern "C" {
+        fn klee_is_symbolic(s: u8) -> i32;
+    }
+    unsafe {
+        let s = verifier_abstract_value(0u8);
+        klee_is_symbolic(s) == 0
+    }
+}
+
 #[cfg(feature = "verifier-panic-handler")]
 use core::panic::PanicInfo;
 
@@ -82,7 +101,7 @@ use std::fmt::Write;
 //
 // todo: this runs the risk of vacuous proofs
 // if no symbolic values are generated
-fn verifier_ignore_panic_hook(info: &PanicInfo) {
+fn verifier_ignore_panic_hook(_info: &PanicInfo) {
     verifier_reject()
 }
 

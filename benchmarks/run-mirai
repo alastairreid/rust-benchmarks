@@ -141,8 +141,23 @@ codegen-units=1
 
 
 def compile(test, cargodir):
+
+  # So there is this weird little hack that we use to detect
+  # whether we are running under klee or running with the ktest
+  # runtime.
+  # It depends on the ktest runtime defining this function
+  # (which it does not)
+  is_symbolic = "int klee_is_symbolic(char* x) { return 0; }"
+  # Fortunately, there is an easy fix - generate the file,
+  # compile it and link it in. There are times when I love
+  # C's complete lack of any module system.
+  with open(f"{cargodir}/libkleeHack.c", "w") as f:
+    print(is_symbolic, file=f)
+  os.system(f"cc {cargodir}/libkleeHack.c -c -o {cargodir}/libkleeHack.a")
+
   rustflags = [
       '-Clto',
+      '-L', os.path.abspath(cargodir),
       '--emit=llvm-ir',
       '-Cpanic=abort',
       '-Warithmetic-overflow',

@@ -21,11 +21,14 @@ pub trait Strategy {
 
 #[macro_export]
 macro_rules! verify {
-  (($($parm:pat in $strategy:expr),+) $body:block)
+  (($($parm:tt in $strategy:expr),+) $body:block)
   => {
     pub fn main() {
         klee_annotations::verifier_set_ignore_panic_hook();
         $(let $parm = $crate::Strategy::value(&$strategy);)*
+        if klee_annotations::verifier_is_ktest() {
+            $(println!("    Value {} = {:?}", std::stringify!($parm), $parm);)*
+        }
         klee_annotations::verifier_set_show_panic_hook();
         $body
     }
