@@ -24,7 +24,9 @@ macro_rules! verify {
   (($($parm:pat in $strategy:expr),+) $body:block)
   => {
     pub fn main() {
+        klee_annotations::verifier_set_ignore_panic_hook();
         $(let $parm = $crate::Strategy::value(&$strategy);)*
+        klee_annotations::verifier_set_show_panic_hook();
         $body
     }
   };

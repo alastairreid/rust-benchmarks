@@ -85,7 +85,7 @@ def mkcargo(test):
 
     #[no_mangle]
     pub extern "C" fn verifier_main() {
-        klee_annotations::verifier_set_panic_hook();
+        klee_annotations::verifier_set_show_panic_hook();
         main();
     }
 

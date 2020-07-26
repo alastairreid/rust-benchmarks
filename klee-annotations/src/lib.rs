@@ -76,7 +76,19 @@ use core::panic::PanicInfo;
 use std::fmt::Write;
 
 #[cfg(feature = "verifier-panic-handler")]
-fn verifier_panic_hook(info: &PanicInfo) {
+// Panic hook for ignoring errors generated
+// while generating symbolic values.
+//
+// todo: this runs the risk of vacuous proofs
+// if no symbolic values are generated
+fn verifier_ignore_panic_hook(info: &PanicInfo) {
+    verifier_reject()
+}
+
+#[cfg(feature = "verifier-panic-handler")]
+// Panic hooks for reporting errors generated
+// after generating all the symbolic values.
+fn verifier_show_panic_hook(info: &PanicInfo) {
     let mut message = String::new();
     match info.message() {
         None => message.write_str("panic"),
@@ -85,9 +97,17 @@ fn verifier_panic_hook(info: &PanicInfo) {
     verifier_report_error(&message)
 }
 
+// Calling this before starting generating symbolic values
+// so that errors produced while generating values are
+// not confused with actual verification errors.
+#[cfg(feature = "verifier-panic-handler")]
+pub fn verifier_set_ignore_panic_hook() {
+    std::panic::set_hook(Box::new(verifier_ignore_panic_hook))
+}
+
 // Calling this before starting verification ensures that
 // panic messages are displayed by KLEE.
 #[cfg(feature = "verifier-panic-handler")]
-pub fn verifier_set_panic_hook() {
-    std::panic::set_hook(Box::new(verifier_panic_hook))
+pub fn verifier_set_show_panic_hook() {
+    std::panic::set_hook(Box::new(verifier_show_panic_hook))
 }
