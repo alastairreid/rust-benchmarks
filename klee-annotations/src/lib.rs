@@ -56,35 +56,18 @@ pub fn verifier_reject() -> ! {
 // This originally used the function "klee_report_error"
 // but this is not supported by the KLEE runtest library
 pub fn verifier_report_error(message: &str) -> ! {
-    if true {
-        extern "C" {
-            fn write(fd: isize, s: *const u8, count: usize);
-        }
-        let prefix  = "KLEE: ERROR:".as_bytes();
-        let message = message.as_bytes();
-        let newline = "\n".as_bytes();
-        unsafe {
-            write(2, prefix.as_ptr(),  prefix.len());
-            write(2, message.as_ptr(), message.len());
-            write(2, newline.as_ptr(), newline.len());
-            verifier_abort();
-        }
-    } else {
-        extern "C" {
-            fn klee_report_error(file: *const raw::c_char, line: usize, message: *const raw::c_char, suffix: *const raw::c_char) -> !;
-        }
-
-        let null = 0 as *const i8;
-        let file = null; // ignored by KLEE
-        let line = 0;    // ignored by KLEE
-        let suffix = ""; // ignored by KLEE
-
-        let message = CString::new(message).unwrap();
-        let suffix  = CString::new(suffix).unwrap();
-        unsafe {
-            klee_report_error(file, line, message.as_ptr(), suffix.as_ptr())
-        }
-    }
+	extern "C" {
+		fn write(fd: isize, s: *const u8, count: usize);
+	}
+	let prefix  = "KLEE: ERROR:".as_bytes();
+	let message = message.as_bytes();
+	let newline = "\n".as_bytes();
+	unsafe {
+		write(2, prefix.as_ptr(),  prefix.len());
+		write(2, message.as_ptr(), message.len());
+		write(2, newline.as_ptr(), newline.len());
+		verifier_abort();
+	}
 }
 
 #[cfg(feature = "verifier-panic-handler")]
