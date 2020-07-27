@@ -5,7 +5,12 @@ use std::sync::Arc;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque, LinkedList};
 // use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque};
 
-// Trait for generating symbolic values
+// Trait representing a set of values from which one can be chosen
+//
+// The primary method is `value` chooses a value from the set.
+//
+// The other methods are copied from the proptest Strategy trait - see the documentation
+// for proptest.
 //
 // Implementations of this trait are datatypes such as Any, Const, VecStrategy, etc.
 // and, in some cases, these datatypes mirror the type structure for which they
@@ -17,6 +22,129 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque, LinkedList};
 pub trait Strategy {
     type Value;
     fn value(&self) -> Self::Value;
+
+    fn prop_map<O, F: Fn(Self::Value) -> O>(
+        self,
+        fun: F,
+    ) -> Map<Self, F>
+    where
+        Self: Sized,
+    {
+        Map {
+            source: self,
+            fun: Arc::new(fun),
+        }
+    }
+
+    fn prop_map_into<O>(self) -> MapInto<Self, O>
+    where
+        Self: Sized,
+        Self::Value: Into<O>,
+    {
+        MapInto {
+            source: self,
+            output: PhantomData,
+        }
+    }
+
+    fn prop_flat_map<S: Strategy, F: Fn(Self::Value) -> S>(
+        self,
+        fun: F,
+    ) -> Flatten<Map<Self, F>>
+    where
+        Self: Sized,
+    {
+        Flatten {
+            source: Map {
+                source: self,
+                fun: Arc::new(fun),
+            },
+        }
+    }
+
+    // Todo: In proptest, the only difference between prop_flat_map
+    // and prop_ind_flat_map is in how they shrink.
+    // So it is not clear that there is any point in having
+    // this method. Or, maybe this method should exist for compatibility
+    // but it should just call prop_flat_map
+    fn prop_ind_flat_map<S: Strategy, F: Fn(Self::Value) -> S>(
+        self,
+        fun: F,
+    ) -> IndFlatten<Map<Self, F>>
+    where
+        Self: Sized,
+    {
+        IndFlatten {
+            source: Map {
+                source: self,
+                fun: Arc::new(fun),
+            },
+        }
+    }
+
+    // Todo: In proptest, the only difference between prop_flat_map
+    // and prop_ind_flat_map2 is in how they shrink and that
+    // prop_ind_flat_map2 returns a tuple of type `(Self::Value, S)`.
+    // Maybe, it is not needed or, for compatibility with proptest,
+    // it should be implemented with a call to prop_flat_map.
+    fn prop_ind_flat_map2<S: Strategy, F: Fn(Self::Value) -> S>(
+        self,
+        fun: F,
+    ) -> IndFlattenMap<Self, F>
+    where
+        Self: Sized,
+    {
+        IndFlattenMap {
+            source: self,
+            fun: Arc::new(fun),
+        }
+    }
+
+    fn prop_filter<F: Fn(&Self::Value) -> bool>(
+        self,
+        fun: F,
+    ) -> Filter<Self, F>
+    where
+        Self: Sized,
+    {
+        Filter {
+            source: self,
+            fun: Arc::new(fun),
+        }
+    }
+
+    fn prop_filter_map<F: Fn(Self::Value) -> Option<O>, O>(
+        self,
+        fun: F,
+    ) -> FilterMap<Self, F>
+    where
+        Self: Sized,
+    {
+        FilterMap {
+            source: self,
+            fun: Arc::new(fun),
+        }
+    }
+
+    fn prop_union(self, other: Self) -> Union<Self>
+    where
+        Self: Sized,
+    {
+        Union {
+            x: self,
+            y: other,
+        }
+    }
+
+    fn boxed(self) -> BoxedStrategy<Self::Value>
+    where
+        Self: Sized + 'static,
+    {
+        BoxedStrategy {
+            b: Box::new(self),
+        }
+    }
+
 }
 
 #[macro_export]
@@ -42,22 +170,25 @@ macro_rules! verify {
 
 
 // The most trivial strategy
-pub struct Const<T> {
-    c: T,
-}
-impl<T> Const<T> {
-    pub fn new(c: T) -> Self {
-        Self {
-            c,
-        }
-    }
-}
-impl<T: Copy> Strategy for Const<T> {
+pub struct Just<T: Clone>(
+    pub T,
+);
+impl<T: Clone> Strategy for Just<T> {
     type Value = T;
     fn value(&self) -> Self::Value {
-        self.c
+        self.0.clone()
     }
 }
+
+
+impl<T> Strategy for fn() -> T {
+    type Value = T;
+
+    fn value(&self) -> Self::Value {
+        self()
+    }
+}
+
 
 pub struct Any<T> {
     _marker: PhantomData<T>,
@@ -90,17 +221,85 @@ impl Strategy for Any<char> {
     }
 }
 
-pub struct Filter<S: Strategy, F> {
+
+pub struct Map<S: Strategy, F> {
     source: S,
     fun: Arc<F>,
 }
-impl<S: Strategy, F> Filter<S, F> {
-    pub fn new(source: S, fun: F) -> Self {
-        Self {
-            source,
-            fun: Arc::new(fun),
-        }
+impl<S: Strategy, T, F: Fn(S::Value) -> T> Strategy for Map<S, F> {
+    type Value = T;
+    fn value(&self) -> Self::Value {
+        let val = self.source.value();
+        (self.fun)(val)
     }
+}
+
+
+pub struct MapInto<S: Strategy, T> {
+    source: S,
+    output: PhantomData<T>,
+}
+impl<S: Strategy, T> Strategy for MapInto<S, T>
+where
+    S::Value: Into<T>,
+{
+    type Value = T;
+    fn value(&self) -> Self::Value {
+        let val = self.source.value();
+        val.into()
+    }
+}
+
+
+pub struct IndFlatten<S> {
+    source: S,
+}
+impl<S: Strategy> Strategy for IndFlatten<S>
+where
+    S::Value: Strategy,
+{
+    type Value = <S::Value as Strategy>::Value;
+    fn value(&self) -> Self::Value {
+        self.source.value().value()
+    }
+}
+
+
+pub struct IndFlattenMap<S, F> {
+    source: S,
+    fun: Arc<F>,
+}
+impl<S: Strategy, T: Strategy, F: Fn(S::Value) -> T> Strategy for IndFlattenMap<S, F>
+where
+    S::Value: Copy,
+{
+    type Value = (S::Value, T::Value);
+    fn value(&self) -> Self::Value {
+        let s = self.source.value();
+        let r = (self.fun)(s).value();
+        (s, r)
+    }
+}
+
+
+pub struct Flatten<S> {
+    source: S,
+}
+impl<S: Strategy> Strategy for Flatten<S>
+where
+    S::Value: Strategy,
+{
+    type Value = <S::Value as Strategy>::Value;
+    fn value(&self) -> Self::Value {
+        let val = self.source.value();
+        val.value()
+    }
+}
+
+
+pub struct Filter<S: Strategy, F> {
+    source: S,
+    fun: Arc<F>,
 }
 impl<S: Strategy, F: Fn(&S::Value) -> bool> Strategy for Filter<S, F> {
     type Value = S::Value;
@@ -111,26 +310,48 @@ impl<S: Strategy, F: Fn(&S::Value) -> bool> Strategy for Filter<S, F> {
     }
 }
 
-pub struct Map<S: Strategy, F> {
+
+pub struct FilterMap<S: Strategy, F> {
     source: S,
     fun: Arc<F>,
 }
-impl<S: Strategy, F> Map<S, F> {
-    pub fn new(source: S, fun: F) -> Self {
-        Self {
-            source,
-            fun: Arc::new(fun),
-        }
-    }
-}
-impl<S: Strategy, T, F: Fn(&S::Value) -> T> Strategy for Map<S, F> {
+impl<S: Strategy, F: Fn(S::Value) -> Option<T>, T> Strategy for FilterMap<S, F> {
     type Value = T;
     fn value(&self) -> Self::Value {
         let val = self.source.value();
-        (self.fun)(&val)
+        match (self.fun)(val) {
+            Some(r) => r,
+            None => verifier_reject()
+        }
     }
 }
 
+
+pub struct Union<S: Strategy> {
+    x: S,
+    y: S,
+}
+impl<S: Strategy> Strategy for Union<S> {
+    type Value = S::Value;
+    fn value(&self) -> Self::Value {
+        if verifier_abstract_value(0u8) == 0 {
+            self.x.value()
+        } else {
+            self.y.value()
+        }
+    }
+}
+
+pub struct BoxedStrategy<T> {
+    b: Box<dyn Strategy<Value = T>>
+}
+impl<T: Strategy> Strategy for BoxedStrategy<T>
+{
+    type Value = T;
+    fn value(&self) -> Self::Value {
+        self.b.value()
+    }
+}
 
 macro_rules! numeric_api {
     ( $( $typ:ty; )* ) => {
