@@ -1,7 +1,7 @@
 // @expect verified
 
 symbolic2::verify!{
-    (v in symbolic2::BinaryHeapStrategy::new(5, 0..100u32)) {
+    (v in symbolic2::binary_heap(0..100u32, 5)) {
         verifier::assert!(v.len() == 5);
         for x in v.iter() {
             verifier::assert!(*x < 100);

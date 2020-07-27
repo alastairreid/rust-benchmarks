@@ -1,7 +1,7 @@
 // @expect error
 
 symbolic2::verify!{
-    (v in symbolic2::BinaryHeapStrategy::new(5, 0..100u32)) {
+    (v in symbolic2::binary_heap(0..100u32, 5)) {
         // check first element larger than rest
         let mut v1 = v;
         let x0 = v1.pop().unwrap();

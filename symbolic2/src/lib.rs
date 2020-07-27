@@ -387,16 +387,8 @@ where
 }
 
 pub struct VecStrategy<S: Strategy> {
+    element: S,
     size: usize, // concrete size to be more friendly to concolic/DSE
-    elements: S,
-}
-impl<S: Strategy> VecStrategy<S> {
-    pub fn new(size: usize, elements: S) -> Self {
-        Self {
-            size,
-            elements,
-        }
-    }
 }
 impl<S: Strategy> Strategy for VecStrategy<S>
 where
@@ -410,23 +402,26 @@ where
         let len = self.size;
         let mut v = Vec::with_capacity(len);
         for _ in 0..len {
-            v.push(self.elements.value());
+            v.push(self.element.value());
         }
         v
     }
 }
 
-pub struct VecDequeStrategy<S: Strategy> {
-    size: usize, // concrete size to be more friendly to concolic/DSE
-    elements: S,
-}
-impl<S: Strategy> VecDequeStrategy<S> {
-    pub fn new(size: usize, elements: S) -> Self {
-        Self {
-            size,
-            elements,
-        }
+pub fn vec<S: Strategy>(
+    element: S,
+    size: usize,
+) -> VecStrategy<S> {
+    VecStrategy {
+        element,
+        size,
     }
+}
+
+
+pub struct VecDequeStrategy<S: Strategy> {
+    element: S,
+    size: usize, // concrete size to be more friendly to concolic/DSE
 }
 impl<S: Strategy> Strategy for VecDequeStrategy<S>
 where
@@ -440,25 +435,28 @@ where
         let len = self.size;
         let mut v = VecDeque::with_capacity(len);
         for _ in 0..len {
-            v.push_front(self.elements.value());
+            v.push_front(self.element.value());
         }
         v
     }
 }
 
-pub struct ListStrategy<S: Strategy> {
-    size: usize, // concrete size to be more friendly to concolic/DSE
-    elements: S,
-}
-impl<S: Strategy> ListStrategy<S> {
-    pub fn new(size: usize, elements: S) -> Self {
-        Self {
-            size,
-            elements,
-        }
+pub fn vec_deque<S: Strategy>(
+    element: S,
+    size: usize,
+) -> VecDequeStrategy<S> {
+    VecDequeStrategy {
+        element,
+        size,
     }
 }
-impl<S: Strategy> Strategy for ListStrategy<S>
+
+
+pub struct LinkedListStrategy<S: Strategy> {
+    element: S,
+    size: usize, // concrete size to be more friendly to concolic/DSE
+}
+impl<S: Strategy> Strategy for LinkedListStrategy<S>
 where
     S: Strategy + Clone,
 {
@@ -467,25 +465,26 @@ where
         let len = self.size;
         let mut v = LinkedList::new();
         for _ in 0..len {
-            v.push_front(self.elements.value());
+            v.push_front(self.element.value());
         }
         v
     }
 }
 
-pub struct BTreeMapStrategy<K: Strategy, V: Strategy> {
-    size: usize, // concrete size to be more friendly to concolic/DSE
-    keys: K,
-    values: V,
-}
-impl<K: Strategy, V: Strategy> BTreeMapStrategy<K, V> {
-    pub fn new(size: usize, keys: K, values: V) -> Self {
-        Self {
-            size,
-            keys,
-            values,
-        }
+pub fn linked_list<S: Strategy>(
+    element: S,
+    size: usize,
+) -> LinkedListStrategy<S> {
+    LinkedListStrategy {
+        element,
+        size,
     }
+}
+
+pub struct BTreeMapStrategy<K: Strategy, V: Strategy> {
+    keys: K,
+    value: V,
+    size: usize, // concrete size to be more friendly to concolic/DSE
 }
 impl<K: Strategy, V: Strategy> Strategy for BTreeMapStrategy<K, V>
 where
@@ -504,7 +503,7 @@ where
         // paths through the generation code.
         let mut k = self.keys.value();
         for _ in 0..len {
-            r.insert(k, self.values.value());
+            r.insert(k, self.value.value());
             let next = self.keys.value();
             verifier_assume(k <= next); // generate entries in fixed order
             k = next;
@@ -513,23 +512,30 @@ where
     }
 }
 
-pub struct BTreeSetStrategy<A: Strategy> {
-    size: usize, // concrete size to be more friendly to concolic/DSE
-    members: A,
-}
-impl<A: Strategy> BTreeSetStrategy<A> {
-    pub fn new(size: usize, members: A) -> Self {
-        Self {
-            size,
-            members,
-        }
+pub fn btree_map<K: Strategy, V: Strategy>(
+    keys: K,
+    value: V,
+    size: usize,
+) -> BTreeMapStrategy<K, V>
+where
+    K::Value: Ord,
+{
+    BTreeMapStrategy {
+        size,
+        keys,
+        value,
     }
 }
-impl<A: Strategy> Strategy for BTreeSetStrategy<A>
+
+pub struct BTreeSetStrategy<S: Strategy> {
+    element: S,
+    size: usize, // concrete size to be more friendly to concolic/DSE
+}
+impl<S: Strategy> Strategy for BTreeSetStrategy<S>
 where
-    A::Value : Ord + Copy
+    S::Value : Ord + Copy
 {
-    type Value = BTreeSet<A::Value>;
+    type Value = BTreeSet<S::Value>;
     fn value(&self) -> Self::Value {
         // Having a range of sizes up to some limit is acceptable
         // but I think it adds some overhead with little gain.
@@ -540,10 +546,10 @@ where
         // Keys are generated in increasing order to
         // reduce the number of effectively equivalent
         // paths through the generation code.
-        let mut k = self.members.value();
+        let mut k = self.element.value();
         for _ in 0..len {
             r.insert(k);
-            let next = self.members.value();
+            let next = self.element.value();
             verifier_assume(k <= next); // generate entries in fixed order
             k = next;
         }
@@ -551,23 +557,29 @@ where
     }
 }
 
-pub struct BinaryHeapStrategy<A: Strategy> {
-    size: usize, // concrete size to be more friendly to concolic/DSE
-    members: A,
-}
-impl<A: Strategy> BinaryHeapStrategy<A> {
-    pub fn new(size: usize, members: A) -> Self {
-        Self {
-            size,
-            members,
-        }
+pub fn btree_set<S: Strategy>(
+    element: S,
+    size: usize,
+) -> BTreeSetStrategy<S>
+where
+    S::Value: Ord,
+{
+    BTreeSetStrategy {
+        element,
+        size,
     }
 }
-impl<A: Strategy> Strategy for BinaryHeapStrategy<A>
+
+
+pub struct BinaryHeapStrategy<S: Strategy> {
+    element: S,
+    size: usize, // concrete size to be more friendly to concolic/DSE
+}
+impl<S: Strategy> Strategy for BinaryHeapStrategy<S>
 where
-    A::Value : Ord + Copy
+    S::Value : Ord + Copy
 {
-    type Value = BinaryHeap<A::Value>;
+    type Value = BinaryHeap<S::Value>;
     fn value(&self) -> Self::Value {
         // Having a range of sizes up to some limit is acceptable
         // but I think it adds some overhead with little gain.
@@ -580,13 +592,28 @@ where
         // paths through the generation code.
         // (This would not be a good idea if we were checking BinaryHeap
         // but our goal is to checking code that uses BinaryHeap.)
-        let mut k = self.members.value();
+        let mut k = self.element.value();
         for _ in 0..len {
             r.push(k);
-            let next = self.members.value();
+            let next = self.element.value();
             verifier_assume(k <= next); // generate entries in fixed order
             k = next;
         }
         r
     }
 }
+
+pub fn binary_heap<S: Strategy>(
+    element: S,
+    size: usize,
+    )
+-> BinaryHeapStrategy<S>
+where
+    S::Value: Ord,
+{
+    BinaryHeapStrategy {
+        element,
+        size,
+    }
+}
+
