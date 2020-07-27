@@ -149,11 +149,13 @@ pub trait Strategy {
 
 #[macro_export]
 macro_rules! verify {
-  (($($parm:tt in $strategy:expr),+) $body:block)
+  // todo: the need to put a comma after the type is not ideal but
+  // is the best I could come up with at the time
+  (($($parm:tt $(: $ty:ty ,)? in $strategy:expr),+) $body:block)
   => {
     pub fn main() {
         klee_annotations::verifier_set_ignore_panic_hook();
-        $(let $parm = $crate::Strategy::value(&$strategy);)*
+        $(let $parm $(: $ty)? = $crate::Strategy::value(&$strategy);)*
         if klee_annotations::verifier_is_ktest() {
             $(println!("  Value {} = {:?}", std::stringify!($parm), $parm);)*
         }
