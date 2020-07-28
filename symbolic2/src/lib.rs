@@ -151,7 +151,7 @@ pub trait Strategy {
 macro_rules! verify {
   // todo: the need to put a comma after the type is not ideal but
   // is the best I could come up with at the time
-  (($($parm:tt $(: $ty:ty ,)? in $strategy:expr),+) $body:block)
+  (($($parm:tt $(: $ty:ty ,)? in $strategy:expr),+ $(,)?) $body:block)
   => {
     pub fn main() {
         klee_annotations::verifier_set_ignore_panic_hook();
@@ -162,6 +162,22 @@ macro_rules! verify {
         klee_annotations::verifier_set_show_panic_hook();
         $body
     }
+  };
+
+  (
+      $(#[$meta:meta])*
+      fn $test_name:ident($($parm:tt in $strategy:expr),+ $(,)?) $body:block
+  ) => {
+      $(#[$meta])*
+      pub fn $test_name() {
+          klee_annotations::verifier_set_ignore_panic_hook();
+          $(let $parm = $crate::Strategy::value(&$strategy);)*
+          if klee_annotations::verifier_is_ktest() {
+              $(println!("  Value {} = {:?}", std::stringify!($parm), $parm);)*
+          }
+          klee_annotations::verifier_set_show_panic_hook();
+          $body
+      }
   };
 }
 
