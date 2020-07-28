@@ -1,7 +1,9 @@
 // @expect verified
 
-symbolic2::verify!{
-    (v in symbolic2::btree_map(-5..5i32, 10..20u32, 5)) {
+use symbolic2::*;
+
+verify!{
+    (v in btree_map(-5..5i32, 10..20u32, 5)) {
 
         // Note that key collisions may reduce the number of entries
         // so the following assertion will fail.
