@@ -2,8 +2,8 @@
 
 use symbolic2::*;
 
-verify!{
-    (v in binary_heap(0..100u32, 5)) {
+proptest!{
+    fn main(v in binary_heap(0..100u32, 5)) {
         // check first element larger than rest
         let mut v1 = v;
         let x0 = v1.pop().unwrap();

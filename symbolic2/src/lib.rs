@@ -148,7 +148,7 @@ pub trait Strategy {
 }
 
 #[macro_export]
-macro_rules! verify {
+macro_rules! proptest {
   // todo: the need to put a comma after the type is not ideal but
   // is the best I could come up with at the time
   (($($parm:tt $(: $ty:ty ,)? in $strategy:expr),+ $(,)?) $body:block)
@@ -169,7 +169,7 @@ macro_rules! verify {
       fn $test_name:ident($($parm:tt in $strategy:expr),+ $(,)?) $body:block
   ) => {
       $(#[$meta])*
-      pub fn $test_name() {
+      fn $test_name() {
           klee_annotations::verifier_set_ignore_panic_hook();
           $(let $parm = $crate::Strategy::value(&$strategy);)*
           if klee_annotations::verifier_is_ktest() {
