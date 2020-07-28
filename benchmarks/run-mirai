@@ -31,8 +31,40 @@ def runtest_cheat(test):
   if "overflow" in test: status = status_overflow
   return status
 
+
+# find a function defined in LLVM assembly file
+def find_void_function(llfile, path):
+  # if verbose: print(f"    Looking up {path} in {llfile}")
+  # apply rustc-style name mangling
+  path = [ str(len(n)) + n for n in path ]
+  name = "".join(path)
+
+  r = None
+  with open(llfile, "r") as f:
+    while not r:
+      l = f.readline()
+      if name not in l: continue
+      m = re.match(r'define internal void @_ZN', l)
+      if m:
+        l = l[m.end():]
+        bits = []
+        while True:
+          m = re.match('(\d+)', l)
+          if not m: break
+          n = int(m.group(1))
+          bits.append(l[m.start(1):m.end(1)+n])
+          l = l[m.end(1)+n:]
+        if l.startswith("E(") and bits[-1-len(path):-1] == path:
+          r = "_ZN" + "".join(bits) +"E"
+  # if verbose: print(f"      Found {r}")
+  return r
+
+
 # Verbosity control flag
 verbose = False
+
+# Are we running all the #[test]s or main?
+runtests = False
 
 # This verifier compiles a Rust file and uses KLEE to detect violations
 def runtest_honest(test, klee_flags):
@@ -50,32 +82,46 @@ def runtest_honest(test, klee_flags):
     if verbose: print(colored(f"  FAILED: Test {test} compilation error", 'red'))
     return status_unknown
 
-  # Third, we run KLEE and sift through the KLEE output to generate
-  # an appropriate status string
-  if verbose: print(f"  Running KLEE to verify {test}")
-  status = klee(llfile, "verifier_main", klee_flags)
-  if status is not None:
+  if runtests:
+    # get a list of the tests
+    tests = list_tests(cargodir)
+    if not tests:
+      print("No tests found")
+      return status_unknown
+    # then look up their mangled names in the llfile
+    tests = [ (t, find_void_function(llfile, t.split('::'))) for t in tests ]
+  else:
+    tests = [("main", "verifier_main")]
 
-    if verbose:
-      cmd = f"{cargodir}/target/debug/test"
-      for t in glob.glob(f"{cargodir}/target/debug/deps/klee-last/test*.ktest"):
-        print(f"Rerunning with test {t}")
-        process = subprocess.Popen([cmd],
-                                   env = { "KTEST_FILE": t },
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE)
-        stdout, stderr = process.communicate()
-        print(stdout.decode("utf-8"))
-        print(stderr.decode("utf-8"))
+  # Third, for each test function, we run KLEE and sift through the KLEE
+  # output to generate an appropriate status string
+  for (name, test) in tests:
+    if verbose: print(f"  Running KLEE to verify {name}")
+    status = klee(llfile, test, klee_flags)
+    if status is not None:
 
-    if verbose: print(colored(f"  FAILED: {test} failed verification", 'red'))
+      if verbose:
+        cmd = f"{cargodir}/target/debug/test"
+        for t in glob.glob(f"{cargodir}/target/debug/deps/klee-last/test*.ktest"):
+          print(f"Rerunning with test {t}")
+          process = subprocess.Popen([cmd],
+                                     env = { "KTEST_FILE": t },
+                                     stdout=subprocess.PIPE,
+                                     stderr=subprocess.PIPE)
+          stdout, stderr = process.communicate()
+          print(stdout.decode("utf-8"))
+          print(stderr.decode("utf-8"))
 
-    return status
+      if verbose: print(colored(f"  FAILED: {name} failed verification", 'red'))
 
-  # If nothing went wrong, report successful verification
-  # (But we are using symbolic execution which may not explore all paths
-  # so this really means that no bugs have been found.)
-  if verbose: print(colored(f"  PASSED: {test}", 'green'))
+      return status
+
+    # If nothing went wrong, report successful verification
+    # (But we are using symbolic execution which may not explore all paths
+    # so this really means that no bugs have been found.)
+    if verbose: print(colored(f"  PASSED: {name}", 'green'))
+
+  # If every single test passed, return success!
   return status_verified
 
 def concat_file(infile, suffix, outfile):
@@ -92,18 +138,22 @@ def mkcargo(test):
   if verbose: print(f"  Creating cargo project {cargodir}")
   os.system(f"cargo new {cargodir} --bin --quiet")
 
-  # First, we have to construct a wrapper function that does some
-  # initialization and then calls main.
-  # We attach that to the end of the file being tested.
-  wrapper_function = '''
+  if runtests:
+    # todo: this is really just copying the file
+    wrapper_function = ""
+  else:
+    # First, we have to construct a wrapper function that does some
+    # initialization and then calls main.
+    # We attach that to the end of the file being tested.
+    wrapper_function = '''
 
-    #[no_mangle]
-    pub extern "C" fn verifier_main() {
-        klee_annotations::verifier_set_show_panic_hook();
-        main();
-    }
+      #[no_mangle]
+      pub extern "C" fn verifier_main() {
+          klee_annotations::verifier_set_show_panic_hook();
+          main();
+      }
 
-  '''
+    '''
   concat_file(test, wrapper_function, f"{cargodir}/src/main.rs")
 
   # Second, add dependencies, etc. to the cargo file
@@ -158,13 +208,19 @@ def compile(test, cargodir):
 
   rustflags = [
       '-Clto',
+      '-Cembed-bitcode=yes',
+      '-Zpanic_abort_tests',
       '-L', os.path.abspath(cargodir),
       '--emit=llvm-ir',
       '-Cpanic=abort',
       '-Warithmetic-overflow',
       '--cfg', 'feature="verifier-klee"'
   ]
-  flags = ["-v"] if verbose else []
+
+  flags = []
+  if verbose: flags.append("-v")
+  if runtests: flags.append("--tests")
+
   process = subprocess.Popen(['/usr/bin/env', 'cargo', 'build'] + flags,
                              cwd=cargodir,
                              env = { "RUSTFLAGS": " ".join(rustflags)
@@ -183,6 +239,36 @@ def compile(test, cargodir):
   llfile = glob.glob(f"{cargodir}/target/debug/deps/test*.ll")[0]
   return llfile
 
+
+# Generate a list of tests in the crate
+# by parsing the output of "cargo test -- --list"
+def list_tests(cargodir):
+  rustflags = [
+      '-L', os.path.abspath(cargodir), # so we can link in libkleeHack
+  ]
+  process = subprocess.Popen(['/usr/bin/env', 'cargo', 'test', '--', '--list'],
+                             cwd=cargodir,
+                             env = { "RUSTFLAGS": " ".join(rustflags)
+                                    , "PATH": os.environ["PATH"] },
+                             stdout=subprocess.PIPE, 
+                             stderr=subprocess.PIPE)
+  stdout, stderr = process.communicate()
+  if False and process.returncode != 0:
+    print("Couldn't get list of tests")
+    print(process.args)
+    if verbose:
+        print(stdout.decode("utf-8"))
+        print(stderr.decode("utf-8"))
+    raise Exception("failure")
+  else:
+    tests = []
+    for l in stdout.decode("utf-8").splitlines():
+      m = re.match("(\S+):\s+test\s*$", l)
+      if m:
+        tests.append(m.group(1))
+    return tests
+
+
 def klee(llfile, entry, klee_flags):
   process = subprocess.Popen(['klee',
                               '--entry-point='+entry,
@@ -195,6 +281,7 @@ def klee(llfile, entry, klee_flags):
   stdout, stderr = process.communicate()
 
   if stdout: print(stdout.decode("utf-8"))
+  # print(stderr.decode("utf-8")) # useful line for desperate debugging
   for l in stderr.splitlines():
     if l.startswith(b"KLEE: output directory"):
       pass
@@ -244,6 +331,10 @@ def main():
   if sys.argv[1] == "-v":
     global verbose # How do I hate Python? Let me count the ways.
     verbose = True
+    del sys.argv[1]
+  if sys.argv[1] == "--tests":
+    global runtests
+    runtests = True
     del sys.argv[1]
   test = sys.argv[1]
   klee_flags = sys.argv[2:]
