@@ -1,6 +1,6 @@
 // @expect error
 
-use symbolic2::*;
+use proptest::prelude::*;
 
 proptest!{
     fn main(v in binary_heap(0..100u32, 5)) {

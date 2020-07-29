@@ -1,6 +1,6 @@
 // @expect error
 
-use symbolic2::*;
+use proptest::prelude::*;
 
 proptest!{
     // todo: the need to put a comma after the type is not ideal but

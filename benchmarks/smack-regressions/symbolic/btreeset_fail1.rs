@@ -1,6 +1,6 @@
 // @expect error
 
-use symbolic2::*;
+use proptest::prelude::*;
 
 proptest!{
     fn main(v in btree_set(-100..100i32, 5)) {

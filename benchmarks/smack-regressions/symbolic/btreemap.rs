@@ -1,6 +1,6 @@
 // @expect verified
 
-use symbolic2::*;
+use proptest::prelude::*;
 
 proptest!{
     fn main(v in btree_map(-5..5i32, 10..20u32, 5)) {

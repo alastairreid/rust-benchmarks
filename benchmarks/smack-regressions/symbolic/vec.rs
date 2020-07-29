@@ -1,6 +1,6 @@
 // @expect verified
 
-use symbolic2::*;
+use proptest::prelude::*;
 
 proptest!{
     fn main(v in vec(0..10u32, 5)) {

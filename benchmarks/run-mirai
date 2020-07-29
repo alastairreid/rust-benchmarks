@@ -173,7 +173,7 @@ version = '0.0.1'
 [dependencies]
 klee-annotations = { path = "%s", features = [ "verifier-panic-handler" ] }
 verifier = { path = "%s", features = [ "verifier-klee" ] }
-symbolic2= { path = "%s", features=[] }
+proptest = { path = "%s", package = 'symbolic2', features=[] }
 
 [profile.dev]
 overflow-checks=true

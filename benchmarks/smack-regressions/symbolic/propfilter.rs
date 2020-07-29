@@ -1,6 +1,6 @@
 // @expect verified
 
-use symbolic2::*;
+use proptest::prelude::*;
 
 proptest!{
     fn main(a in (0..).prop_filter(|x| x % 4 == 0)) {
