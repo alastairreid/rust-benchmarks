@@ -181,13 +181,13 @@ version = '0.0.1'
 
     annotations = "../../klee-annotations"
     verifier    = "../../verifier"
-    symbolic2   = "../../symbolic2"
+    propverify  = "../../propverify"
     if backend == Backend.KLEE:
       f.write("""
 [dependencies]
 klee-annotations = { path = "%s", features = [ "verifier-panic-handler" ] }
 verifier = { path = "%s", features = [ "verifier-klee" ] }
-proptest = { path = "%s", package = 'symbolic2', features=[] }
+proptest = { path = "%s", package = 'propverify', features=[] }
 
 [profile.dev]
 overflow-checks=true
@@ -200,7 +200,7 @@ debug-assertions=true
 # overflow-checks=true
 rpath=false
 codegen-units=1
-            """ % (annotations, verifier, symbolic2))
+            """ % (annotations, verifier, propverify))
     else:
       f.write("""
 [dependencies]

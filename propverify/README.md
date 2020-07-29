@@ -1,4 +1,4 @@
-# `symbolic2`
+# `propverify`
 
 This is a library/DSL for writing verification harnesses.
 
