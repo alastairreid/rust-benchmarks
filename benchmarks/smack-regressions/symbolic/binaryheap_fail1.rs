@@ -3,9 +3,9 @@
 use proptest::prelude::*;
 
 proptest!{
-    fn main(v in binary_heap(0..100u32, 5)) {
+    fn main(v in prop::collection::binary_heap(0..100u32, 5)) {
         for x in v.iter() {
-            verifier::assert!(*x < 10);
+            assert!(*x < 10);
         }
     }
 }

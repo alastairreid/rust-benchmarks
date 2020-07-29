@@ -3,9 +3,9 @@
 use proptest::prelude::*;
 
 proptest!{
-    fn main(v in linked_list(0..10u32, 5)) {
+    fn main(v in prop::collection::linked_list(0..10u32, 5)) {
         for x in &v {
-            verifier::assert!(*x < 5);
+            assert!(*x < 5);
         }
     }
 }
