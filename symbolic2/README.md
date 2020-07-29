@@ -1,11 +1,14 @@
-# `symbolic`
+# `symbolic2`
 
-Trait and implementation for generating symbolic values.
-This is closely modelled on the property testing library
+This is a library/DSL for writing verification harnesses.
+
+We see formal verification and testing as two parts of the same
+activity and so this library is designed to be compatible
+with the
 [proptest](https://github.com/AltSysrq/proptest)
-which is based on
-[Hypothesis](https://hypothesis.works/).
-
+fuzzing/property testing library
+so that you can use the same harness with
+either a formal verification tool or with a fuzzing tool.
 
 ## License
 
@@ -17,6 +20,22 @@ Licensed under either of
   http://opensource.org/licenses/MIT)
 
 at your option.
+
+## Acknowledgements
+
+This crate is heavily based on the design and API of the wonderful
+[proptest](https://github.com/AltSysrq/proptest)
+fuzz-testing library.
+The implementation also borrows techniques, tricks and code
+from the implementation - you can learn a lot about how to write
+an embedded DSL from reading the proptest code.
+
+In turn, proptest was influenced by
+the [Rust port of QuickCheck](https://github.com/burntsushi/quickcheck)
+and
+the [Hypothesis](https://hypothesis.works/) fuzzing/property testing library Python.
+(proptest also acknowledges `regex_generate` – but we have not yet implemented
+regex strategies for this library.)
 
 ### Contribution
 
