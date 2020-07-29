@@ -102,6 +102,7 @@ pub trait Strategy {
 
     fn prop_filter<F: Fn(&Self::Value) -> bool>(
         self,
+        _whence: &str,
         fun: F,
     ) -> Filter<Self, F>
     where
@@ -115,6 +116,7 @@ pub trait Strategy {
 
     fn prop_filter_map<F: Fn(Self::Value) -> Option<O>, O>(
         self,
+        _whence: &str,
         fun: F,
     ) -> FilterMap<Self, F>
     where
@@ -149,21 +151,6 @@ pub trait Strategy {
 
 #[macro_export]
 macro_rules! proptest {
-  // todo: the need to put a comma after the type is not ideal but
-  // is the best I could come up with at the time
-  (($($parm:tt $(: $ty:ty ,)? in $strategy:expr),+ $(,)?) $body:block)
-  => {
-    pub fn main() {
-        klee_annotations::verifier_set_ignore_panic_hook();
-        $(let $parm $(: $ty)? = $crate::prelude::Strategy::value(&$strategy);)*
-        if klee_annotations::verifier_is_ktest() {
-            $(println!("  Value {} = {:?}", std::stringify!($parm), $parm);)*
-        }
-        klee_annotations::verifier_set_show_panic_hook();
-        $body
-    }
-  };
-
   (
       $(#[$meta:meta])*
       fn $test_name:ident($($parm:tt in $strategy:expr),+ $(,)?) $body:block
