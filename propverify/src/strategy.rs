@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque, LinkedList};
 // The other methods are copied from the proptest Strategy trait - see the documentation
 // for proptest.
 //
-// Implementations of this trait are datatypes such as Any, Const, VecStrategy, etc.
+// Implementations of this trait are datatypes such as Any, Just, VecStrategy, etc.
 // and, in some cases, these datatypes mirror the type structure for which they
 // generate values.
 //
@@ -561,15 +561,9 @@ small_array!(32 uniform32: a0, a1, a2, a3, a4, a5, a6, a7, a8, a9,
                            a20, a21, a22, a23, a24, a25, a26, a27, a28, a29,
                            a30, a31);
 
+
 pub struct OptionStrategy<S: Strategy> {
     s: S,
-}
-impl<S: Strategy> OptionStrategy<S> {
-    pub fn new(s: S) -> Self {
-        Self {
-            s,
-        }
-    }
 }
 impl<S: Strategy> Strategy for OptionStrategy<S>
 where
@@ -585,17 +579,16 @@ where
     }
 }
 
+pub fn of<S: Strategy>(s: S) -> OptionStrategy<S> {
+    OptionStrategy {
+        s,
+    }
+}
+
+
 pub struct ResultStrategy<A: Strategy, B: Strategy> {
     a: A,
     b: B,
-}
-impl<A: Strategy, B: Strategy> ResultStrategy<A, B> {
-    pub fn new(a: A, b: B) -> Self {
-        Self {
-            a,
-            b,
-        }
-    }
 }
 impl<A, B> Strategy for ResultStrategy<A, B>
 where
@@ -611,6 +604,21 @@ where
         }
     }
 }
+
+pub fn maybe_ok<A: Strategy, B: Strategy>(a: A, b: B) -> ResultStrategy<A, B> {
+    ResultStrategy {
+        a,
+        b,
+    }
+}
+
+pub fn maybe_err<A: Strategy, B: Strategy>(a: A, b: B) -> ResultStrategy<A, B> {
+    ResultStrategy {
+        a,
+        b,
+    }
+}
+
 
 pub struct VecStrategy<S: Strategy> {
     element: S,
