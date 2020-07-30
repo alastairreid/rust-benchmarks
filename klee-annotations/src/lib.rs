@@ -55,38 +55,27 @@ pub fn verifier_reject() -> ! {
 // This originally used the function "klee_report_error"
 // but this is not supported by the KLEE runtest library
 pub fn verifier_report_error(message: &str) -> ! {
-	extern "C" {
-		fn write(fd: isize, s: *const u8, count: usize);
-	}
-	let prefix  = "KLEE: ERROR:".as_bytes();
-	let message = message.as_bytes();
-	let newline = "\n".as_bytes();
-	unsafe {
-		write(2, prefix.as_ptr(),  prefix.len());
-		write(2, message.as_ptr(), message.len());
-		write(2, newline.as_ptr(), newline.len());
-		verifier_abort();
-	}
+    extern "C" {
+        fn write(fd: isize, s: *const u8, count: usize);
+    }
+    let prefix  = "KLEE: ERROR:".as_bytes();
+    let message = message.as_bytes();
+    let newline = "\n".as_bytes();
+    unsafe {
+        write(2, prefix.as_ptr(),  prefix.len());
+        write(2, message.as_ptr(), message.len());
+        write(2, newline.as_ptr(), newline.len());
+        verifier_abort();
+    }
 }
 
 // (In part because pthread support is broken at the moment)
 // we only want to display values when running with the ktest runtime
 // so we need a way to tell which mode we are running in.
-//
-// The following is a disgusting hack where we create a symbolic
-// value and then call "klee_is_symbolic()" on it.
-// This function is not implemented by the ktest runtime - but
-// we can add our own definition at link time.
-// (Did I mention that this was a hack?)
 pub fn verifier_is_ktest() -> bool {
-    #[link(name = "kleeHack")]
-    extern "C" {
-        fn klee_is_symbolic(s: u8) -> i32;
-    }
-    unsafe {
-        let s = verifier_abstract_value(0u8);
-        klee_is_symbolic(s) == 0
-    }
+    #[link(name = "kleeRuntest")]
+    extern "C" { fn klee_is_replay() -> i32; }
+    unsafe { klee_is_replay() != 0 }
 }
 
 #[cfg(feature = "verifier-panic-handler")]

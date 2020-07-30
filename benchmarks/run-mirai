@@ -213,24 +213,10 @@ proptest = "*"
 
 def compile(test, cargodir):
 
-  # So there is this weird little hack that we use to detect
-  # whether we are running under klee or running with the ktest
-  # runtime.
-  # It depends on the ktest runtime defining this function
-  # (which it does not)
-  is_symbolic = "int klee_is_symbolic(char* x) { return 0; }"
-  # Fortunately, there is an easy fix - generate the file,
-  # compile it and link it in. There are times when I love
-  # C's complete lack of any module system.
-  with open(f"{cargodir}/libkleeHack.c", "w") as f:
-    print(is_symbolic, file=f)
-  os.system(f"cc {cargodir}/libkleeHack.c -c -o {cargodir}/libkleeHack.a")
-
   rustflags = [
       '-Clto',
       '-Cembed-bitcode=yes',
       '-Zpanic_abort_tests',
-      '-L', os.path.abspath(cargodir),
       '--emit=llvm-ir',
       '-Cpanic=abort',
       '-Warithmetic-overflow',
@@ -263,13 +249,8 @@ def compile(test, cargodir):
 # Generate a list of tests in the crate
 # by parsing the output of "cargo test -- --list"
 def list_tests(cargodir):
-  rustflags = [
-      '-L', os.path.abspath(cargodir), # so we can link in libkleeHack
-  ]
   process = subprocess.Popen(['/usr/bin/env', 'cargo', 'test', '--', '--list'],
                              cwd=cargodir,
-                             env = { "RUSTFLAGS": " ".join(rustflags)
-                                    , "PATH": os.environ["PATH"] },
                              stdout=subprocess.PIPE, 
                              stderr=subprocess.PIPE)
   stdout, stderr = process.communicate()
