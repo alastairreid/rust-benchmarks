@@ -114,7 +114,7 @@ def runtest_honest(test, klee_flags):
 
     if verbose:
       cmd = f"{cargodir}/target/debug/test"
-      for t in glob.glob(f"{cargodir}/target/debug/deps/klee-last/test*.ktest"):
+      for t in sorted(glob.glob(f"{cargodir}/target/debug/deps/klee-last/test*.ktest")):
         print(f"Rerunning with test {t}")
         process = subprocess.Popen([cmd],
                                    env = { "KTEST_FILE": t },
