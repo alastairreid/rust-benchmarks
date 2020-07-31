@@ -5,6 +5,7 @@ from enum import Enum
 import glob
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -104,7 +105,7 @@ def runtest_honest(test, klee_flags):
     # then look up their mangled names in the llfile
     tests = [ (t, find_void_function(llfile, t.split('::'))) for t in tests ]
   else:
-    tests = [("main", "verifier_main")]
+    tests = [("main", "main")]
 
   # Third, for each test function, we run KLEE and sift through the KLEE
   # output to generate an appropriate status string
@@ -147,28 +148,16 @@ def concat_file(infile, suffix, outfile):
 def mkcargo(test):
   cargodir = tempfile.TemporaryDirectory(dir=".", prefix="tmpcargo-").name
   # atexit.register(os.remove, cargodir) # todo: use cleanup() method?
+
   if verbose: print(f"  Creating cargo project {cargodir}")
+
+  # Create a cargo file
   os.system(f"cargo new {cargodir} --bin --quiet")
 
-  if runtests or backend == Backend.proptest:
-    # todo: this is really just copying the file
-    wrapper_function = ""
-  else:
-    # First, we have to construct a wrapper function that does some
-    # initialization and then calls main.
-    # We attach that to the end of the file being tested.
-    wrapper_function = '''
+  # Copy in the test file
+  shutil.copyfile(test, f"{cargodir}/src/main.rs")
 
-      #[no_mangle]
-      pub extern "C" fn verifier_main() {
-          klee_annotations::verifier_set_show_panic_hook();
-          main();
-      }
-
-    '''
-  concat_file(test, wrapper_function, f"{cargodir}/src/main.rs")
-
-  # Second, add dependencies, etc. to the cargo file
+  # Add dependencies, etc. to the cargo file
   toml_file = f"{cargodir}/Cargo.toml"
   with open(toml_file, "w") as f:
     f.write(f"""
@@ -274,6 +263,7 @@ def klee(llfile, entry, klee_flags):
   process = subprocess.Popen(['klee',
                               '--entry-point='+entry,
                               '--exit-on-error',
+                              '--posix-runtime',
                               '--silent-klee-assume']
                              +klee_flags
                              +[llfile],
@@ -287,6 +277,8 @@ def klee(llfile, entry, klee_flags):
     if l.startswith(b"KLEE: output directory"):
       pass
     elif l.startswith(b"KLEE: Using"):
+      pass
+    elif l.startswith(b"KLEE: NOTE: Using POSIX model"):
       pass
     elif l.startswith(b"warning: Linking two modules of different data layouts"):
       pass
@@ -317,6 +309,8 @@ def klee(llfile, entry, klee_flags):
           else:
             print(l)
       return status_error
+    elif b"with overflow" in l:
+      return status_overflow
     elif l != b'':
       print(l)
       return status_unknown
