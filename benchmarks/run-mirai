@@ -173,14 +173,14 @@ version = '0.0.1'
     if backend == Backend.KLEE:
       f.write("""
 [dependencies]
-klee-annotations = { path = "%s", features = [ "verifier-panic-handler" ] }
+klee-annotations = { path = "%s" }
 verifier = { path = "%s", features = [ "verifier-klee" ] }
 proptest = { path = "%s", package = 'propverify', features=[] }
 
 [profile.dev]
 overflow-checks=true
 lto=true
-# panic="abort"
+panic="abort"
 incremental=false
 opt-level=0
 debug=false

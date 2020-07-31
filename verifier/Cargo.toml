@@ -7,11 +7,8 @@ repository = "https://github.com/zvonimir/rust-benchmarks"
 license = "MIT"
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-klee-annotations = { path = "../klee-annotations", features = ["verifier-panic-handler"] }
+klee-annotations = { path = "../klee-annotations" }
 
 [features]
 verifier-klee = []
-# verifier-panic-handler = ["klee-annotations/verifier-panic-handle"]

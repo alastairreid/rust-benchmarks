@@ -8,10 +8,7 @@ categories = []
 keywords = ["klee"]
 license = "MIT OR Apache-2.0"
 
-# [dependencies]
-
-[features]
-verifier-panic-handler = []
+[dependencies]
 
 [profile.dev]
 codegen-units = 1

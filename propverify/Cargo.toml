@@ -5,4 +5,4 @@ authors = ["Alastair Reid <adreid@google.com>"]
 edition = "2018"
 
 [dependencies]
-klee-annotations = { path = "../klee-annotations", features = [ "verifier-panic-handler" ] }
+klee-annotations = { path = "../klee-annotations" }
