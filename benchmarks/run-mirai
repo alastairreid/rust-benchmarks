@@ -1,372 +1,46 @@
 #!/usr/bin/env python3
 
-import atexit
-from enum import Enum
-import glob
+import argparse
 import os
-import re
-import shutil
-import subprocess
-import sys
 import tempfile
 
 from termcolor import colored
 
-# legal responses from this script
-# (to match the regtest.py script)
-status_timeout   = "SMACK timed out"
-status_verified  = None
-status_error     = "false verification condition"
-status_overflow  = "with overflow"
-status_reachable = "statement is reachable"
-status_unknown   = "unknown result" # can be any string you like
-
-# This "verifier" was used for debugging the interface to regtest.py but
-# is not used anymore.
-#
-# It cheats at verification by just looking at the filename to decide
-# what to report.
-# This was surprisingly accurate :-)
-def runtest_cheat(test):
-  status = status_verified
-  if "fail" in test: status = status_error
-  if "overflow" in test: status = status_overflow
-  return status
-
-
-# find a function defined in LLVM assembly file
-def find_void_function(llfile, path):
-  # if verbose: print(f"    Looking up {path} in {llfile}")
-  # apply rustc-style name mangling
-  path = [ str(len(n)) + n for n in path ]
-  name = "".join(path)
-
-  r = None
-  with open(llfile, "r") as f:
-    while not r:
-      l = f.readline()
-      if name not in l: continue
-      m = re.match(r'define internal void @_ZN', l)
-      if m:
-        l = l[m.end():]
-        bits = []
-        while True:
-          m = re.match('(\d+)', l)
-          if not m: break
-          n = int(m.group(1))
-          bits.append(l[m.start(1):m.end(1)+n])
-          l = l[m.end(1)+n:]
-        if l.startswith("E(") and bits[-1-len(path):-1] == path:
-          r = "_ZN" + "".join(bits) +"E"
-  # if verbose: print(f"      Found {r}")
-  return r
-
-# Backends supported by this tool
-class Backend(Enum):
-  KLEE = 1
-  proptest = 2
-
-# Which backend are we using
-backend = Backend.KLEE
-
-# Verbosity control flag
-verbose = False
-
-# Are we running all the #[test]s or main?
-runtests = False
-
-# This verifier compiles a Rust file and uses KLEE to detect violations
-def runtest_honest(test, klee_flags):
-  if verbose: print(f"Checking {colored(test, 'white', attrs=['bold'])}")
-
-  if verbose: print(f"  Constructing cargo for {test}")
-  # First, build a cargo project with the right dependencies
-  cargodir = mkcargo(test)
-
-  if backend == Backend.proptest:
-    if verbose: print(f"  Invoking cargo run with proptest backend")
-    status = run_proptest(cargodir)
-    return status
-
-  # Second, we compile and link the patched file using LTO to generate the entire
-  # application in a single LLVM file
-  if verbose: print(f"  Compiling {test}")
-  llfile = compile(test, cargodir)
-  if llfile is None:
-    if verbose: print(colored(f"  FAILED: Test {test} compilation error", 'red'))
-    return status_unknown
-
-  if runtests:
-    # get a list of the tests
-    tests = list_tests(cargodir)
-    if not tests:
-      print("No tests found")
-      return status_unknown
-    # then look up their mangled names in the llfile
-    tests = [ (t, find_void_function(llfile, t.split('::'))) for t in tests ]
-  else:
-    tests = [("main", "main")]
-
-  # Third, for each test function, we run KLEE and sift through the KLEE
-  # output to generate an appropriate status string
-  for (name, test) in tests:
-    if verbose: print(f"  Running KLEE to verify {name}")
-    status = klee(llfile, test, klee_flags)
-
-    if verbose:
-      cmd = f"{cargodir}/target/debug/test"
-      for t in sorted(glob.glob(f"{cargodir}/target/debug/deps/klee-last/test*.ktest")):
-        print(f"Rerunning with test {t}")
-        process = subprocess.Popen([cmd],
-                                   env = { "KTEST_FILE": t },
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE)
-        stdout, stderr = process.communicate()
-        print(stdout.decode("utf-8"))
-        print(stderr.decode("utf-8"))
-
-    if status is not None:
-      if verbose: print(colored(f"  FAILED: {name} failed verification", 'red'))
-      return status
-
-    # If nothing went wrong, report successful verification
-    # (But we are using symbolic execution which may not explore all paths
-    # so this really means that no bugs have been found.)
-    if verbose: print(colored(f"  PASSED: {name}", 'green'))
-
-  # If every single test passed, return success!
-  return status_verified
-
-def concat_file(infile, suffix, outfile):
-  with open(outfile, "w") as output_file:
-    with open(infile, "r") as input_file:
-      x = input_file.read()
-      print(x, file=output_file)
-      print(suffix, file=output_file)
-
-
-def mkcargo(test):
-  cargodir = tempfile.TemporaryDirectory(dir=".", prefix="tmpcargo-").name
-  # atexit.register(os.remove, cargodir) # todo: use cleanup() method?
-
-  if verbose: print(f"  Creating cargo project {cargodir}")
-
-  # Create a cargo file
-  os.system(f"cargo new {cargodir} --bin --quiet")
-
-  # Copy in the test file
-  shutil.copyfile(test, f"{cargodir}/src/main.rs")
-
-  # Add dependencies, etc. to the cargo file
-  toml_file = f"{cargodir}/Cargo.toml"
-  with open(toml_file, "w") as f:
-    f.write(f"""
-[package]
-name = 'test'
-edition = '2018'
-version = '0.0.1'
-            """)
-
-    annotations = "../../klee-annotations"
-    verifier    = "../../verifier"
-    propverify  = "../../propverify"
-    if backend == Backend.KLEE:
-      f.write("""
-[dependencies]
-klee-annotations = { path = "%s" }
-verifier = { path = "%s", features = [ "verifier-klee" ] }
-proptest = { path = "%s", package = 'propverify', features=[] }
-
-[profile.dev]
-overflow-checks=true
-lto=true
-panic="abort"
-incremental=false
-opt-level=0
-debug=false
-debug-assertions=true
-# overflow-checks=true
-rpath=false
-codegen-units=1
-            """ % (annotations, verifier, propverify))
-    else:
-      f.write("""
-[dependencies]
-verifier = { path = "%s", features = [ "verifier-klee" ] }
-proptest = "*"
-              """ % (verifier))
-
-
-  return cargodir
-
-
-def compile(test, cargodir):
-
-  rustflags = [
-      '-Clto',
-      '-Cembed-bitcode=yes',
-      '-Zpanic_abort_tests',
-      '--emit=llvm-ir',
-      '-Cpanic=abort',
-      '-Warithmetic-overflow',
-      '--cfg', 'feature="verifier-klee"'
-  ]
-
-  flags = []
-  if verbose: flags.append("-v")
-  if runtests: flags.append("--tests")
-
-  process = subprocess.Popen(['/usr/bin/env', 'cargo', 'build'] + flags,
-                             cwd=cargodir,
-                             env = { "RUSTFLAGS": " ".join(rustflags)
-                                    , "PATH": os.environ["PATH"] },
-                             stdout=subprocess.PIPE, 
-                             stderr=subprocess.PIPE)
-  stdout, stderr = process.communicate()
-  if process.returncode != 0:
-    print("Couldn't compile")
-    print(process.args)
-    if verbose:
-        print(stdout.decode("utf-8"))
-        print(stderr.decode("utf-8"))
-    return None
-
-  llfile = glob.glob(f"{cargodir}/target/debug/deps/test*.ll")[0]
-  return llfile
-
-
-# Generate a list of tests in the crate
-# by parsing the output of "cargo test -- --list"
-def list_tests(cargodir):
-  process = subprocess.Popen(['/usr/bin/env', 'cargo', 'test', '--', '--list'],
-                             cwd=cargodir,
-                             stdout=subprocess.PIPE, 
-                             stderr=subprocess.PIPE)
-  stdout, stderr = process.communicate()
-  if False and process.returncode != 0:
-    print("Couldn't get list of tests")
-    print(process.args)
-    if verbose:
-        print(stdout.decode("utf-8"))
-        print(stderr.decode("utf-8"))
-    raise Exception("failure")
-  else:
-    tests = []
-    for l in stdout.decode("utf-8").splitlines():
-      m = re.match("(\S+):\s+test\s*$", l)
-      if m:
-        tests.append(m.group(1))
-    return tests
-
-
-def klee(llfile, entry, klee_flags):
-  process = subprocess.Popen(['klee',
-                              '--entry-point='+entry,
-                              '--exit-on-error',
-                              '--posix-runtime',
-                              '--silent-klee-assume']
-                             +klee_flags
-                             +[llfile],
-                             stdout=subprocess.PIPE, 
-                             stderr=subprocess.PIPE)
-  stdout, stderr = process.communicate()
-
-  if stdout: print(stdout.decode("utf-8"))
-  # print(stderr.decode("utf-8")) # useful line for desperate debugging
-  for l in stderr.splitlines():
-    if l.startswith(b"KLEE: output directory"):
-      pass
-    elif l.startswith(b"KLEE: Using"):
-      pass
-    elif l.startswith(b"KLEE: NOTE: Using POSIX model"):
-      pass
-    elif l.startswith(b"warning: Linking two modules of different data layouts"):
-      pass
-    elif l.startswith(b"KLEE: WARNING:"):
-      pass
-    elif l.startswith(b"KLEE: WARNING ONCE:"):
-      pass
-    elif l.startswith(b"KLEE: done:"):
-      pass
-    elif l.startswith(b"KLEE: HaltTimer invoked"):
-      return status_timeout
-    elif l.startswith(b"KLEE: halting execution, dumping remaining states"):
-      return status_timeout
-    elif l.startswith(b"KLEE: ERROR:") and b"unreachable" in l:
-      return status_reachable
-    elif l.startswith(b"KLEE: ERROR:") and b"overflow" in l:
-      return status_overflow
-    elif l.startswith(b"KLEE: ERROR:"):
-      print(l)
-      if verbose:
-        for l in stderr.decode("utf-8").splitlines():
-          if l.startswith("KLEE: WARNING"):
-            pass
-          elif l.startswith("KLEE: Using"):
-            pass
-          elif l.startswith("KLEE: NOTE"):
-            pass
-          else:
-            print(l)
-      return status_error
-    elif b"assertion failed" in l:
-      print(l)
-      return status_error
-    elif b"with overflow" in l:
-      return status_overflow
-    elif l != b'':
-      print(l)
-      return status_unknown
-
-  if process.returncode != 0:
-    return status_unknown
-
-  return None
-
-def run_proptest(cargodir):
-  process = subprocess.Popen(['/usr/bin/env', 'cargo', 'run'],
-                             cwd=cargodir,
-                             stdout=subprocess.PIPE, 
-                             stderr=subprocess.PIPE)
-  stdout, stderr = process.communicate()
-  if process.returncode != 0:
-    if verbose: print(stderr.decode("utf-8"))
-    if verbose: print(stdout.decode("utf-8"))
-    for l in stderr.splitlines():
-      if b"with overflow" in l:
-        return status_overflow
-    return status_error
-  else:
-    return None
-
 def main():
-  # todo: worlds worst command line parsing!
-  if sys.argv[1] == "-v":
-    global verbose # How do I hate Python? Let me count the ways.
-    verbose = True
-    del sys.argv[1]
-  if sys.argv[1] == "--tests":
-    global runtests
-    runtests = True
-    del sys.argv[1]
-  test = sys.argv[1]
-  klee_flags = sys.argv[2:]
+  parser = argparse.ArgumentParser(description='Create a cargo crate from a file')
+  parser.add_argument('--backend', metavar='b',
+                      choices=['klee', 'proptest'],
+                      default="klee",
+                      help='select backend')
+  parser.add_argument('--verbose', '-v', action='count', default=0)
+  parser.add_argument('--crate', help='crate to construct')
+  parser.add_argument('--tests', action='store_true', default=False,
+                      help='run #[test]s instead of main')
+  parser.add_argument('test', help='Rust file to verify')
+  parser.add_argument('klee_flags', nargs="*", help='extra verification flags')
+  args = parser.parse_args()
 
-  if "TEST_BACKEND" in os.environ:
-    b = os.environ["TEST_BACKEND"]
-    global backend
-    if b == "KLEE":
-      backend = Backend.KLEE
-    elif b == "proptest":
-      backend = Backend.proptest
-    else:
-      print(f"Unrecognized backend '{b}'")
-      print(status_unknown)
-      return
+  if args.backend is None and "TEST_BACKEND" in os.environ:
+    args.backend = os.environ["TEST_BACKEND"]
 
-  status = runtest_honest(test, klee_flags)
-  if  status: print(status)
-  exit(0) # exit status doesn't seem to be important, but use 0
+  if args.crate is None:
+    args.crate = tempfile.TemporaryDirectory(dir=".", prefix="tmpcargo-").name
+
+  cmd = ["./mkcargo"]
+  if args.verbose: cmd.append("--verbose")
+  cmd.append(f"--backend={args.backend}")
+  cmd.append(args.test)
+  cmd.append(args.crate)
+  os.system(" ".join(cmd))
+
+  cmd = ["./cargo-verify"]
+  if args.verbose: cmd.append("--verbose")
+  if args.tests: cmd.append("--tests")
+  cmd.append(f"--backend={args.backend}")
+  cmd.append(f"--label={args.test}")
+  cmd.append(args.crate)
+  if args.klee_flags: cmd.extend(args.klee_flags)
+  os.system(" ".join(cmd))
 
 if __name__=="__main__":
   main()

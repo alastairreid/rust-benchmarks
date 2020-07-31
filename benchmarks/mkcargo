@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+
+import argparse
+import os
+import shutil
+import sys
+
+def mkcargo(test, cargodir, backend):
+  # Create a cargo file
+  os.system(f"cargo new {cargodir} --bin --quiet")
+
+  # Copy in the test file
+  shutil.copyfile(test, f"{cargodir}/src/main.rs")
+
+  # Add dependencies, etc. to the cargo file
+  toml_file = f"{cargodir}/Cargo.toml"
+  with open(toml_file, "w") as f:
+    f.write(f"""
+[package]
+name = 'test'
+edition = '2018'
+version = '0.0.1'
+            """)
+
+    annotations = "../../klee-annotations"
+    verifier    = "../../verifier"
+    propverify  = "../../propverify"
+    if backend == "klee":
+      f.write("""
+[dependencies]
+klee-annotations = { path = "%s" }
+verifier = { path = "%s", features = [ "verifier-klee" ] }
+proptest = { path = "%s", package = 'propverify', features=[] }
+
+[profile.dev]
+overflow-checks=true
+lto=true
+panic="abort"
+incremental=false
+opt-level=0
+debug=false
+debug-assertions=true
+# overflow-checks=true
+rpath=false
+codegen-units=1
+            """ % (annotations, verifier, propverify))
+    else:
+      f.write("""
+[dependencies]
+verifier = { path = "%s", features = [ "verifier-klee" ] }
+proptest = "*"
+              """ % (verifier))
+
+  return cargodir
+
+
+def main():
+  parser = argparse.ArgumentParser(description='Create a cargo crate from a file')
+  parser.add_argument('--backend', metavar='b',
+                      choices=['klee', 'proptest'],
+                      default="klee",
+                      help='select backend')
+  parser.add_argument('--verbose', '-v', action='count', default=0)
+  parser.add_argument('test', help='Rust file to verify')
+  parser.add_argument('crate', help='crate to construct')
+  args = parser.parse_args()
+
+  if args.verbose: print(f"Constructing cargo project {args.crate} for {args.test} with backend {args.backend}")
+  cargodir = mkcargo(args.test, args.crate, args.backend)
+
+  exit(0) # exit status doesn't seem to be important, but use 0
+
+if __name__=="__main__":
+  main()
