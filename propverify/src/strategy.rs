@@ -157,12 +157,10 @@ macro_rules! proptest {
   ) => {
       $(#[$meta])*
       fn $test_name() {
-          klee_annotations::verifier_set_ignore_panic_hook();
           $(let $parm = $crate::prelude::Strategy::value(&$strategy);)*
           if klee_annotations::verifier_is_ktest() {
               $(println!("  Value {} = {:?}", std::stringify!($parm), $parm);)*
           }
-          klee_annotations::verifier_set_show_panic_hook();
           $body
       }
   };
