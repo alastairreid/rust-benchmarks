@@ -309,6 +309,9 @@ def klee(llfile, entry, klee_flags):
           else:
             print(l)
       return status_error
+    elif b"assertion failed" in l:
+      print(l)
+      return status_error
     elif b"with overflow" in l:
       return status_overflow
     elif l != b'':
