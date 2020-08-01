@@ -2,10 +2,12 @@
 
 import argparse
 import glob
+import json
 import os
 import re
 import subprocess
 import sys
+import toml
 
 from termcolor import colored
 
@@ -59,7 +61,7 @@ def find_void_function(llfile, path, verbose):
   return r
 
 
-def compile(crate, runtests, verbose):
+def compile(label, crate, targetdir, runtests, verbose):
   rustflags = [
       '-Clto',
       '-Cembed-bitcode=yes',
@@ -89,7 +91,7 @@ def compile(crate, runtests, verbose):
         print(stderr.decode("utf-8"))
     return None
 
-  llfile = glob.glob(f"{crate}/target/debug/deps/test*.ll")[0]
+  llfile = glob.glob(f"{targetdir}/debug/deps/{label}*.ll")[0]
   return llfile
 
 
@@ -117,20 +119,24 @@ def list_tests(crate, verbose):
     return tests
 
 
-def klee(llfile, entry, klee_flags, verbose):
+def klee(llfile, entry, crate, klee_flags, verbose):
+  if verbose: print(f"  Running KLEE on {llfile} entry: {entry}")
   process = subprocess.Popen(['klee',
                               '--entry-point='+entry,
                               '--exit-on-error',
-                              '--posix-runtime',
+                              # '--posix-runtime',
+                              # '--libcxx',
+                              '--libc=klee',
                               '--silent-klee-assume']
                              +klee_flags
                              +[llfile],
+                             cwd=crate,
                              stdout=subprocess.PIPE, 
                              stderr=subprocess.PIPE)
   stdout, stderr = process.communicate()
 
   if stdout: print(stdout.decode("utf-8"))
-  # print(stderr.decode("utf-8")) # useful line for desperate debugging
+  if verbose > 2:  print(stderr.decode("utf-8")) # useful line for desperate debugging
   for l in stderr.splitlines():
     if l.startswith(b"KLEE: output directory"):
       pass
@@ -140,11 +146,11 @@ def klee(llfile, entry, klee_flags, verbose):
       pass
     elif l.startswith(b"warning: Linking two modules of different data layouts"):
       pass
-    elif l.startswith(b"KLEE: WARNING:"):
+    elif b"KLEE: WARNING:" in l:
       pass
-    elif l.startswith(b"KLEE: WARNING ONCE:"):
+    elif b"KLEE: WARNING ONCE:" in l:
       pass
-    elif l.startswith(b"KLEE: done:"):
+    elif b"KLEE: done:" in l:
       pass
     elif l.startswith(b"KLEE: HaltTimer invoked"):
       return status_timeout
@@ -170,8 +176,12 @@ def klee(llfile, entry, klee_flags, verbose):
     elif b"assertion failed" in l:
       print(l)
       return status_error
+    elif b"verification failed" in l:
+      return status_error
     elif b"with overflow" in l:
       return status_overflow
+    elif b"note: run with `RUST_BACKTRACE=1`" in l:
+      return status_error
     elif l != b'':
       print(l)
       return status_unknown
@@ -197,13 +207,32 @@ def run_proptest(crate):
   else:
     return None
 
+def read_metadata(crate):
+  process = subprocess.Popen(['/usr/bin/env',
+                              'cargo', 'metadata', '--format-version=1'],
+                             cwd=crate,
+                             stdout=subprocess.PIPE, 
+                             stderr=subprocess.PIPE)
+  stdout, stderr = process.communicate()
+  if process.returncode != 0:
+    print("Unable to read crate metadata")
+    sys.exit(1)
+  else:
+    return json.loads(stdout)
 
 # This verifier compiles a Rust file and uses KLEE to detect violations
-def run_klee(label, crate, runtests, flags, verbose):
+def run_klee(crate, runtests, flags, verbose):
+  # Find the target directory and name of package
+  metadata = read_metadata(crate)
+  targetdir = metadata["target_directory"]
+  manifest = toml.load(f"{crate}/Cargo.toml")
+  label = manifest["package"]["name"]
+  label = label.replace("-", "_")
+
   # Compile and link the patched file using LTO to generate the entire
   # application in a single LLVM file
   if verbose: print(f"  Compiling {label}")
-  llfile = compile(crate, runtests, verbose)
+  llfile = compile(label, crate, targetdir, runtests, verbose)
   if llfile is None:
     if verbose: print(colored(f"  FAILED: Test {label} compilation error", 'red'))
     return status_unknown
@@ -215,7 +244,7 @@ def run_klee(label, crate, runtests, flags, verbose):
       print("No tests found")
       return status_unknown
     # then look up their mangled names in the llfile
-    tests = [ (t, find_void_function(llfile, t.split('::')), verbose) for t in tests ]
+    tests = [ (t, find_void_function(llfile, t.split('::'), verbose)) for t in tests ]
   else:
     tests = [("main", "main")]
 
@@ -223,14 +252,24 @@ def run_klee(label, crate, runtests, flags, verbose):
   # output to generate an appropriate status string
   for (name, test) in tests:
     if verbose: print(f"  Running KLEE to verify {name}")
-    status = klee(llfile, test, flags, verbose)
+    status = klee(llfile, test, crate, flags, verbose)
 
     if verbose:
-      cmd = f"{crate}/target/debug/test"
-      for t in sorted(glob.glob(f"{crate}/target/debug/deps/klee-last/test*.ktest")):
+      for t in sorted(glob.glob(f"{targetdir}/debug/deps/klee-last/test*.ktest")):
+        cmd = []
+        cmd.append("/usr/bin/env")
+        cmd.extend(["cargo", "test"])
+        cmd.append(name)
+        cmd.append('--')
+        if verbose > 1: cmd.append('--nocapture')
+
         print(f"Rerunning with test {t}")
-        process = subprocess.Popen([cmd],
-                                   env = { "KTEST_FILE": t },
+        process = subprocess.Popen(cmd,
+                                   env = {
+                                       "KTEST_FILE": t,
+                                       "PATH": os.environ["PATH"]
+                                   },
+                                   cwd=crate,
                                    stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE)
         stdout, stderr = process.communicate()
@@ -259,20 +298,18 @@ def main():
   parser.add_argument('--verbose', '-v', action='count', default=0)
   parser.add_argument('--tests', action='store_true', default=False,
                       help='run #[test]s instead of main')
-  parser.add_argument('--label', help='name of crate')
   parser.add_argument('crate', help='crate to verify')
   parser.add_argument('klee_flags', nargs="*", help='extra verification flags')
   args = parser.parse_args()
-  if args.label is None: args.label = args.crate
 
-  if args.verbose: print(f"Checking {colored(args.label, 'white', attrs=['bold'])}")
+  if args.verbose: print(f"Checking {colored({args.crate}, 'white', attrs=['bold'])}")
 
   if args.backend == "proptest":
     if verbose: print(f"  Invoking cargo run with proptest backend")
     status = run_proptest(args.crate)
     return status
   else:
-    status = run_klee(args.label, args.crate, args.tests, args.klee_flags, args.verbose)
+    status = run_klee(args.crate, args.tests, args.klee_flags, args.verbose)
 
   if status: print(status)
   exit(0) # exit status doesn't seem to be important, but use 0

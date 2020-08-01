@@ -37,7 +37,6 @@ def main():
   if args.verbose: cmd.append("--verbose")
   if args.tests: cmd.append("--tests")
   cmd.append(f"--backend={args.backend}")
-  cmd.append(f"--label={args.test}")
   cmd.append(args.crate)
   if args.klee_flags: cmd.extend(args.klee_flags)
   os.system(" ".join(cmd))

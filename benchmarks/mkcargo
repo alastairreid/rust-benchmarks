@@ -5,7 +5,7 @@ import os
 import shutil
 import sys
 
-def mkcargo(test, cargodir, backend):
+def mkcargo(label, test, cargodir, backend):
   # Create a cargo file
   os.system(f"cargo new {cargodir} --bin --quiet")
 
@@ -17,7 +17,7 @@ def mkcargo(test, cargodir, backend):
   with open(toml_file, "w") as f:
     f.write(f"""
 [package]
-name = 'test'
+name = '{label}'
 edition = '2018'
 version = '0.0.1'
             """)
@@ -61,12 +61,15 @@ def main():
                       default="klee",
                       help='select backend')
   parser.add_argument('--verbose', '-v', action='count', default=0)
+  parser.add_argument('--label', help='name of crate')
   parser.add_argument('test', help='Rust file to verify')
   parser.add_argument('crate', help='crate to construct')
   args = parser.parse_args()
 
-  if args.verbose: print(f"Constructing cargo project {args.crate} for {args.test} with backend {args.backend}")
-  cargodir = mkcargo(args.test, args.crate, args.backend)
+  if args.label is None: args.label = "test"
+
+  if args.verbose: print(f"Constructing cargo project {args.label} in {args.crate} for {args.test} with backend {args.backend}")
+  cargodir = mkcargo(args.label, args.test, args.crate, args.backend)
 
   exit(0) # exit status doesn't seem to be important, but use 0
 
