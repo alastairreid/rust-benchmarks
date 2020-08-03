@@ -34,18 +34,19 @@ def runtest_cheat(test):
 
 
 # find a function defined in LLVM assembly file
-def find_void_function(llfile, path, verbose):
-  # if verbose: print(f"    Looking up {path} in {llfile}")
+def find_void_functions(llfile, paths, verbose):
+  if verbose: print(f"    Looking up {paths} in {llfile}")
   # apply rustc-style name mangling
-  path = [ str(len(n)) + n for n in path ]
-  name = "".join(path)
+  paths = [[ str(len(n)) + n for n in path] for path in paths]
+  names = [ "".join(path) for path in paths ]
 
-  r = None
+  rs = []
   with open(llfile, "r") as f:
-    while not r:
+    while len(rs) < len(paths):
       l = f.readline()
-      if name not in l: continue
-      m = re.match(r'define internal void @_ZN', l)
+      if not l: break
+      # if all([n not in l for n in names]): continue
+      m = re.match(r'define internal (fastcc )?void @_ZN', l)
       if m:
         l = l[m.end():]
         bits = []
@@ -55,10 +56,15 @@ def find_void_function(llfile, path, verbose):
           n = int(m.group(1))
           bits.append(l[m.start(1):m.end(1)+n])
           l = l[m.end(1)+n:]
-        if l.startswith("E(") and bits[-1-len(path):-1] == path:
-          r = "_ZN" + "".join(bits) +"E"
-  # if verbose: print(f"      Found {r}")
-  return r
+        # print(bits)
+        if l.startswith("E(") and bits[1:-1] in paths:
+          t = "::".join(bits[1:-1]) # drop crate name and suffix hash
+          f = "_ZN" + "".join(bits) +"E"
+          rs.append((t, f))
+  if verbose: print(f"      Found {rs}")
+  if len(rs) < len(paths):
+    raise "Unable to find all tests"
+  return rs
 
 
 def compile(label, crate, targetdir, runtests, verbose):
@@ -66,6 +72,9 @@ def compile(label, crate, targetdir, runtests, verbose):
       '-Clto',                 # We need bitcode/llvm-as
       '-Cembed-bitcode=yes',
       '--emit=llvm-ir',
+
+      '-Copt-level=1',         # Avoid generating SSE instructions
+                               # Any value except 0 seems to work
 
       '-Zpanic_abort_tests',   # Panic abort is simpler
       '-Cpanic=abort',
@@ -93,6 +102,7 @@ def compile(label, crate, targetdir, runtests, verbose):
   if process.returncode != 0:
     print("Couldn't compile")
     print(process.args)
+    print(f"RUSTFLAGS = {' '.join(rustflags)}")
     if verbose:
         print(stdout.decode("utf-8"))
         print(stderr.decode("utf-8"))
@@ -121,6 +131,7 @@ def list_tests(crate, verbose):
   else:
     tests = []
     for l in stdout.decode("utf-8").splitlines():
+      print(l)
       m = re.match("(\S+):\s+test\s*$", l)
       if m:
         tests.append(m.group(1))
@@ -247,12 +258,15 @@ def run_klee(crate, runtests, flags, verbose):
 
   if runtests:
     # get a list of the tests
+    if verbose: print(f"  Getting list of tests in {label}")
     tests = list_tests(crate, verbose)
     if not tests:
       print("No tests found")
       return status_unknown
+    if verbose: print(f"  Tests: {tests}")
     # then look up their mangled names in the llfile
-    tests = [ (t, find_void_function(llfile, t.split('::'), verbose)) for t in tests ]
+    tests = find_void_functions(llfile, [ t.split('::') for t in tests ], verbose)
+    if verbose: print(f"  Mangled: {tests}")
   else:
     tests = [("main", "main")]
 
