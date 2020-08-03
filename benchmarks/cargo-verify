@@ -32,35 +32,48 @@ def runtest_cheat(test):
   if "overflow" in test: status = status_overflow
   return status
 
+def demangle_name(l):
+  bits = []
+  while True:
+    m = re.match('(\d+)', l)
+    if not m: break
+    n = int(m.group(1))
+    bits.append(l[m.start(1):m.end(1)+n])
+    l = l[m.end(1)+n:]
+  return (bits, l)
 
-# find a function defined in LLVM assembly file
-def find_void_functions(llfile, paths, verbose):
-  if verbose: print(f"    Looking up {paths} in {llfile}")
+# find a function defined in LLVM bitcode file
+#
+# This amounts to mangling the function names but is
+# more complicated because we don't have the hash value in our hand
+def find_void_functions(bcfile, paths, verbose):
+  if verbose: print(f"    Looking up {paths} in {bcfile}")
   # apply rustc-style name mangling
-  paths = [[ str(len(n)) + n for n in path] for path in paths]
-  names = [ "".join(path) for path in paths ]
+  paths = { "".join([ str(len(n)) + n for n in path]): "::".join(path) for path in paths }
+
+  process = subprocess.Popen(['/usr/bin/env', 'llvm-nm', '--defined-only', bcfile],
+                             stdout=subprocess.PIPE, 
+                             stderr=subprocess.PIPE)
+  stdout, stderr = process.communicate()
+  if process.returncode != 0:
+    print("Couldn't run llvm-nm")
+    print(process.args)
+    if verbose:
+        print(stdout.decode("utf-8"))
+        print(stderr.decode("utf-8"))
+    return None
 
   rs = []
-  with open(llfile, "r") as f:
-    while len(rs) < len(paths):
-      l = f.readline()
-      if not l: break
-      # if all([n not in l for n in names]): continue
-      m = re.match(r'define internal (fastcc )?void @_ZN', l)
-      if m:
-        l = l[m.end():]
-        bits = []
-        while True:
-          m = re.match('(\d+)', l)
-          if not m: break
-          n = int(m.group(1))
-          bits.append(l[m.start(1):m.end(1)+n])
-          l = l[m.end(1)+n:]
-        # print(bits)
-        if l.startswith("E(") and bits[1:-1] in paths:
-          t = "::".join(bits[1:-1]) # drop crate name and suffix hash
-          f = "_ZN" + "".join(bits) +"E"
-          rs.append((t, f))
+  for l in stdout.splitlines():
+    l = l.split()
+    if len(l) == 3 and l[1] in [b't', b'T'] and l[2].startswith(b'_ZN'):
+      mangled = l[2].decode('utf-8')
+      (name, rest) = demangle_name(mangled[3:])
+      key = "".join(name[1:-1])
+      if rest == "E" and key in paths:
+        t = paths[key]
+        f = mangled[0:3] + "".join(name) + rest
+        rs.append((t, f))
   if verbose: print(f"      Found {rs}")
   if len(rs) < len(paths):
     raise "Unable to find all tests"
@@ -71,7 +84,7 @@ def compile(label, crate, targetdir, runtests, verbose):
   rustflags = [
       '-Clto',                 # We need bitcode/llvm-as
       '-Cembed-bitcode=yes',
-      '--emit=llvm-ir',
+      '--emit=llvm-bc',
 
       '-Copt-level=1',         # Avoid generating SSE instructions
                                # Any value except 0 seems to work
@@ -108,8 +121,8 @@ def compile(label, crate, targetdir, runtests, verbose):
         print(stderr.decode("utf-8"))
     return None
 
-  llfile = glob.glob(f"{targetdir}/debug/deps/{label}*.ll")[0]
-  return llfile
+  bcfile = glob.glob(f"{targetdir}/debug/deps/{label}*.bc")[0]
+  return bcfile
 
 
 # Generate a list of tests in the crate
@@ -138,8 +151,8 @@ def list_tests(crate, verbose):
     return tests
 
 
-def klee(llfile, entry, crate, klee_flags, verbose):
-  if verbose: print(f"  Running KLEE on {llfile} entry: {entry}")
+def klee(bcfile, entry, crate, klee_flags, verbose):
+  if verbose: print(f"  Running KLEE on {bcfile} entry: {entry}")
   process = subprocess.Popen(['klee',
                               '--entry-point='+entry,
                               '--exit-on-error',
@@ -148,7 +161,7 @@ def klee(llfile, entry, crate, klee_flags, verbose):
                               '--libc=klee',
                               '--silent-klee-assume']
                              +klee_flags
-                             +[llfile],
+                             +[bcfile],
                              cwd=crate,
                              stdout=subprocess.PIPE, 
                              stderr=subprocess.PIPE)
@@ -251,8 +264,8 @@ def run_klee(crate, runtests, flags, verbose):
   # Compile and link the patched file using LTO to generate the entire
   # application in a single LLVM file
   if verbose: print(f"  Compiling {label}")
-  llfile = compile(label, crate, targetdir, runtests, verbose)
-  if llfile is None:
+  bcfile = compile(label, crate, targetdir, runtests, verbose)
+  if bcfile is None:
     if verbose: print(colored(f"  FAILED: Test {label} compilation error", 'red'))
     return status_unknown
 
@@ -264,8 +277,8 @@ def run_klee(crate, runtests, flags, verbose):
       print("No tests found")
       return status_unknown
     if verbose: print(f"  Tests: {tests}")
-    # then look up their mangled names in the llfile
-    tests = find_void_functions(llfile, [ t.split('::') for t in tests ], verbose)
+    # then look up their mangled names in the bcfile
+    tests = find_void_functions(bcfile, [ t.split('::') for t in tests ], verbose)
     if verbose: print(f"  Mangled: {tests}")
   else:
     tests = [("main", "main")]
@@ -274,7 +287,7 @@ def run_klee(crate, runtests, flags, verbose):
   # output to generate an appropriate status string
   for (name, test) in tests:
     if verbose: print(f"  Running KLEE to verify {name}")
-    status = klee(llfile, test, crate, flags, verbose)
+    status = klee(bcfile, test, crate, flags, verbose)
 
     if verbose:
       for t in sorted(glob.glob(f"{targetdir}/debug/deps/klee-last/test*.ktest")):
