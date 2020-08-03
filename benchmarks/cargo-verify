@@ -47,7 +47,7 @@ def demangle_name(l):
 # This amounts to mangling the function names but is
 # more complicated because we don't have the hash value in our hand
 def find_void_functions(bcfile, paths, verbose):
-  if verbose: print(f"    Looking up {paths} in {bcfile}")
+  if verbose > 3: print(f"    Looking up {paths} in {bcfile}")
   # apply rustc-style name mangling
   paths = { "".join([ str(len(n)) + n for n in path]): "::".join(path) for path in paths }
 
@@ -74,7 +74,7 @@ def find_void_functions(bcfile, paths, verbose):
         t = paths[key]
         f = mangled[0:3] + "".join(name) + rest
         rs.append((t, f))
-  if verbose: print(f"      Found {rs}")
+  if verbose > 3: print(f"      Found {rs}")
   if len(rs) < len(paths):
     raise "Unable to find all tests"
   return rs
@@ -144,7 +144,7 @@ def list_tests(crate, verbose):
   else:
     tests = []
     for l in stdout.decode("utf-8").splitlines():
-      print(l)
+      # print(l)
       m = re.match("(\S+):\s+test\s*$", l)
       if m:
         tests.append(m.group(1))
@@ -152,7 +152,6 @@ def list_tests(crate, verbose):
 
 
 def klee(bcfile, entry, crate, klee_flags, verbose):
-  if verbose: print(f"  Running KLEE on {bcfile} entry: {entry}")
   process = subprocess.Popen(['klee',
                               '--entry-point='+entry,
                               '--exit-on-error',
@@ -279,7 +278,7 @@ def run_klee(crate, runtests, flags, verbose):
     if verbose: print(f"  Tests: {tests}")
     # then look up their mangled names in the bcfile
     tests = find_void_functions(bcfile, [ t.split('::') for t in tests ], verbose)
-    if verbose: print(f"  Mangled: {tests}")
+    if verbose > 3: print(f"  Mangled: {tests}")
   else:
     tests = [("main", "main")]
 
@@ -287,6 +286,9 @@ def run_klee(crate, runtests, flags, verbose):
   # output to generate an appropriate status string
   for (name, test) in tests:
     if verbose: print(f"  Running KLEE to verify {name}")
+    if verbose > 1:
+      print(f"    file: {bcfile}")
+      print(f"    entry: {test}")
     status = klee(bcfile, test, crate, flags, verbose)
 
     if verbose:
@@ -301,7 +303,7 @@ def run_klee(crate, runtests, flags, verbose):
         cmd.append('--')
         if verbose > 1: cmd.append('--nocapture')
 
-        print(f"Rerunning with test {t}")
+        print(f"    Test input {t}")
         process = subprocess.Popen(cmd,
                                    env = {
                                        "KTEST_FILE": t,
@@ -311,8 +313,9 @@ def run_klee(crate, runtests, flags, verbose):
                                    stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE)
         stdout, stderr = process.communicate()
-        print(stdout.decode("utf-8"))
-        print(stderr.decode("utf-8"))
+        if process.returncode != 0:
+          for l in stderr.splitlines(): print("      " + l.decode("utf-8"))
+        for l in stdout.splitlines(): print("      " + l.decode("utf-8"))
 
     if status is not None:
       if verbose: print(colored(f"  FAILED: {name} failed verification", 'red'))
