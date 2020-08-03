@@ -63,13 +63,20 @@ def find_void_function(llfile, path, verbose):
 
 def compile(label, crate, targetdir, runtests, verbose):
   rustflags = [
-      '-Clto',
+      '-Clto',                 # We need bitcode/llvm-as
       '-Cembed-bitcode=yes',
-      '-Zpanic_abort_tests',
       '--emit=llvm-ir',
+
+      '-Zpanic_abort_tests',   # Panic abort is simpler
       '-Cpanic=abort',
-      '-Warithmetic-overflow',
-      '--cfg', 'feature="verifier-klee"'
+
+      '-Warithmetic-overflow', # Detecting errors is good!
+
+      '-Cno-vectorize-loops',  # KLEE does not support vector intrinisics
+      '-Cno-vectorize-slp',
+      '-Ctarget-feature=-sse',
+
+      '--cfg', 'feature="verifier-klee"' # Use KLEE version of library
   ]
 
   flags = []
