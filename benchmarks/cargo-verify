@@ -264,7 +264,7 @@ def run_klee(crate, runtests, flags, verbose):
 
   # Compile and link the patched file using LTO to generate the entire
   # application in a single LLVM file
-  if verbose: print(f"  Compiling {label}")
+  if verbose > 1: print(f"  Compiling {label}")
   bcfile = compile(label, crate, targetdir, runtests, verbose)
   if bcfile is None:
     if verbose: print(colored(f"  FAILED: Test {label} compilation error", 'red'))
@@ -272,12 +272,12 @@ def run_klee(crate, runtests, flags, verbose):
 
   if runtests:
     # get a list of the tests
-    if verbose: print(f"  Getting list of tests in {label}")
+    if verbose > 2: print(f"  Getting list of tests in {label}")
     tests = list_tests(crate, verbose)
     if not tests:
       print("No tests found")
       return status_unknown
-    if verbose: print(f"  Tests: {tests}")
+    if verbose > 0: print(f"  Checking {' '.join(tests)}")
     # then look up their mangled names in the bcfile
     tests = find_void_functions(bcfile, [ t.split('::') for t in tests ], verbose)
     if verbose > 3: print(f"  Mangled: {tests}")
@@ -291,14 +291,14 @@ def run_klee(crate, runtests, flags, verbose):
     if os.path.exists(kleeout):
       print(f"Unable to create file {kleeout}")
       return status_unknown
-    if verbose: print(f"  Running KLEE to verify {name}")
-    if verbose > 1:
+    if verbose > 1: print(f"  Running KLEE to verify {name}")
+    if verbose > 2:
       print(f"      file: {bcfile}")
       print(f"      entry: {test}")
       print(f"      results: {kleeout}")
     status = klee(bcfile, test, crate, kleeout, flags, verbose)
 
-    if verbose:
+    if verbose > 1:
       for t in sorted(glob.glob(f"{kleeout}/test*.ktest")):
         cmd = []
         cmd.append("/usr/bin/env")
@@ -325,7 +325,7 @@ def run_klee(crate, runtests, flags, verbose):
         for l in stdout.splitlines(): print("      " + l.decode("utf-8"))
 
     if status is not None:
-      if verbose: print(colored(f"  FAILED: {name} failed verification", 'red'))
+      if verbose > 0: print(colored(f"  FAILED: {name} failed verification", 'red'))
       return status
 
     # If nothing went wrong, report successful verification

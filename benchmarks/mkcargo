@@ -36,8 +36,20 @@ proptest = { path = "%s", package = 'propverify', features=[] }
 overflow-checks=true
 lto=true
 panic="abort"
-incremental=false
-opt-level=0
+# incremental=false
+opt-level=1
+debug=false
+debug-assertions=true
+# overflow-checks=true
+rpath=false
+codegen-units=1
+
+[profile.test]
+overflow-checks=true
+lto=true
+# panic="abort"
+# incremental=false
+opt-level=1
 debug=false
 debug-assertions=true
 # overflow-checks=true
