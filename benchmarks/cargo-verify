@@ -99,6 +99,7 @@ def compile(label, crate, targetdir, runtests, verbose):
 # by parsing the output of "cargo test -- --list"
 def list_tests(crate, verbose):
   process = subprocess.Popen(['/usr/bin/env', 'cargo', 'test', '--', '--list'],
+                             #'--exclude-should-panic' ],
                              cwd=crate,
                              stdout=subprocess.PIPE, 
                              stderr=subprocess.PIPE)
@@ -258,8 +259,11 @@ def run_klee(crate, runtests, flags, verbose):
       for t in sorted(glob.glob(f"{targetdir}/debug/deps/klee-last/test*.ktest")):
         cmd = []
         cmd.append("/usr/bin/env")
-        cmd.extend(["cargo", "test"])
-        cmd.append(name)
+        if runtests:
+          cmd.extend(["cargo", "test"])
+          cmd.append(name)
+        else:
+          cmd.extend(["cargo", "run"])
         cmd.append('--')
         if verbose > 1: cmd.append('--nocapture')
 
