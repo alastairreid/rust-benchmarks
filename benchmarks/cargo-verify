@@ -160,6 +160,7 @@ def klee(bcfile, entry, crate, kleeout, klee_flags, verbose):
                               '--libc=klee',
                               '--silent-klee-assume',
                               f'--output-dir={kleeout}',
+                              '--disable-verify', # workaround https://github.com/klee/klee/issues/937
                               ]
                              +klee_flags
                              +[bcfile],
@@ -262,6 +263,8 @@ def run_klee(crate, runtests, flags, verbose):
   label = manifest["package"]["name"]
   label = label.replace("-", "_")
 
+  if verbose: print(f"Checking {colored(label, 'white', attrs=['bold'])}")
+
   # Compile and link the patched file using LTO to generate the entire
   # application in a single LLVM file
   if verbose > 1: print(f"  Compiling {label}")
@@ -350,9 +353,8 @@ def main():
   parser.add_argument('klee_flags', nargs="*", help='extra verification flags')
   args = parser.parse_args()
 
-  if args.verbose: print(f"Checking {colored({args.crate}, 'white', attrs=['bold'])}")
-
   if args.backend == "proptest":
+    if args.verbose: print(f"Checking {colored({args.crate}, 'white', attrs=['bold'])}")
     if verbose: print(f"  Invoking cargo run with proptest backend")
     status = run_proptest(args.crate)
     return status
