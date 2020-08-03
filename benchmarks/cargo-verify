@@ -151,14 +151,16 @@ def list_tests(crate, verbose):
     return tests
 
 
-def klee(bcfile, entry, crate, klee_flags, verbose):
+def klee(bcfile, entry, crate, kleeout, klee_flags, verbose):
   process = subprocess.Popen(['klee',
                               '--entry-point='+entry,
                               '--exit-on-error',
                               # '--posix-runtime',
                               # '--libcxx',
                               '--libc=klee',
-                              '--silent-klee-assume']
+                              '--silent-klee-assume',
+                              f'--output-dir={kleeout}',
+                              ]
                              +klee_flags
                              +[bcfile],
                              cwd=crate,
@@ -167,7 +169,7 @@ def klee(bcfile, entry, crate, klee_flags, verbose):
   stdout, stderr = process.communicate()
 
   if stdout: print(stdout.decode("utf-8"))
-  if verbose > 2:  print(stderr.decode("utf-8")) # useful line for desperate debugging
+  if verbose > 3:  print(stderr.decode("utf-8")) # useful line for desperate debugging
   for l in stderr.splitlines():
     if l.startswith(b"KLEE: output directory"):
       pass
@@ -285,14 +287,19 @@ def run_klee(crate, runtests, flags, verbose):
   # For each test function, we run KLEE and sift through the KLEE
   # output to generate an appropriate status string
   for (name, test) in tests:
+    kleeout = os.path.abspath(f"{crate}/kleeout-{name}")
+    if os.path.exists(kleeout):
+      print(f"Unable to create file {kleeout}")
+      return status_unknown
     if verbose: print(f"  Running KLEE to verify {name}")
     if verbose > 1:
-      print(f"    file: {bcfile}")
-      print(f"    entry: {test}")
-    status = klee(bcfile, test, crate, flags, verbose)
+      print(f"      file: {bcfile}")
+      print(f"      entry: {test}")
+      print(f"      results: {kleeout}")
+    status = klee(bcfile, test, crate, kleeout, flags, verbose)
 
     if verbose:
-      for t in sorted(glob.glob(f"{targetdir}/debug/deps/klee-last/test*.ktest")):
+      for t in sorted(glob.glob(f"{kleeout}/test*.ktest")):
         cmd = []
         cmd.append("/usr/bin/env")
         if runtests:
@@ -301,7 +308,7 @@ def run_klee(crate, runtests, flags, verbose):
         else:
           cmd.extend(["cargo", "run"])
         cmd.append('--')
-        if verbose > 1: cmd.append('--nocapture')
+        cmd.append('--nocapture')
 
         print(f"    Test input {t}")
         process = subprocess.Popen(cmd,

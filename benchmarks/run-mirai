@@ -34,7 +34,7 @@ def main():
   os.system(" ".join(cmd))
 
   cmd = ["./cargo-verify"]
-  if args.verbose: cmd.append("--verbose")
+  for _ in range(0, args.verbose): cmd.append("--verbose")
   if args.tests: cmd.append("--tests")
   cmd.append(f"--backend={args.backend}")
   cmd.append(args.crate)
