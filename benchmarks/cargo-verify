@@ -250,6 +250,8 @@ def read_metadata(crate):
   stdout, stderr = process.communicate()
   if process.returncode != 0:
     print("Unable to read crate metadata")
+    print(stderr.decode("utf-8"))
+    print(stdout.decode("utf-8"))
     sys.exit(1)
   else:
     return json.loads(stdout)
