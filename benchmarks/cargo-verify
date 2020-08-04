@@ -11,26 +11,12 @@ import toml
 
 from termcolor import colored
 
-# legal responses from this script
-# (to match the regtest.py script)
-status_timeout   = "SMACK timed out"
-status_verified  = None
-status_error     = "false verification condition"
-status_overflow  = "with overflow"
-status_reachable = "statement is reachable"
-status_unknown   = "unknown result" # can be any string you like
-
-# This "verifier" was used for debugging the interface to regtest.py but
-# is not used anymore.
-#
-# It cheats at verification by just looking at the filename to decide
-# what to report.
-# This was surprisingly accurate :-)
-def runtest_cheat(test):
-  status = status_verified
-  if "fail" in test: status = status_error
-  if "overflow" in test: status = status_overflow
-  return status
+status_timeout   = "TIMEOUT"
+status_verified  = "VERIFIED"
+status_error     = "ERROR"
+status_overflow  = "OVERFLOW"
+status_reachable = "REACHABLE"
+status_unknown   = "UNKNOWN"
 
 def demangle_name(l):
   bits = []
@@ -363,8 +349,11 @@ def main():
   else:
     status = run_klee(args.crate, args.tests, args.klee_flags, args.verbose)
 
-  if status: print(status)
-  exit(0) # exit status doesn't seem to be important, but use 0
+  if status is None: status = status_verified
+  print(f"VERIFICATION_RESULT: {status}")
+
+  error_code = 0 if status == status_verified else 1
+  exit(error_code)
 
 
 if __name__=="__main__":

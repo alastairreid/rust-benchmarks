@@ -2,9 +2,18 @@
 
 import argparse
 import os
+import subprocess
 import tempfile
 
 from termcolor import colored
+
+# Magic strings used to communicate with regtest.py
+status_timeout   = "SMACK timed out"
+status_verified  = None
+status_error     = "false verification condition"
+status_overflow  = "with overflow"
+status_reachable = "statement is reachable"
+status_unknown   = "unknown result" # can be any string you like
 
 def main():
   parser = argparse.ArgumentParser(description='Create a cargo crate from a file')
@@ -31,7 +40,17 @@ def main():
   cmd.append(f"--backend={args.backend}")
   cmd.append(args.test)
   cmd.append(args.crate)
-  os.system(" ".join(cmd))
+  process = subprocess.Popen(cmd,
+                             stdout=subprocess.PIPE, 
+                             stderr=subprocess.PIPE)
+  stdout, stderr = process.communicate()
+  if process.returncode != 0:
+    print("Failed running mkcargo")
+    if args.verbose:
+        print(stdout.decode("utf-8"))
+        print(stderr.decode("utf-8"))
+    print(status_error)
+    os.exit(1)
 
   cmd = ["./cargo-verify"]
   for _ in range(0, args.verbose): cmd.append("--verbose")
@@ -39,7 +58,42 @@ def main():
   cmd.append(f"--backend={args.backend}")
   cmd.append(args.crate)
   if args.klee_flags: cmd.extend(args.klee_flags)
-  os.system(" ".join(cmd))
+  process = subprocess.Popen(cmd,
+                             stdout=subprocess.PIPE, 
+                             stderr=subprocess.PIPE)
+  stdout, stderr = process.communicate()
+  if process.returncode != 0:
+    print("Failed running cargo-verify")
+
+  if args.verbose:
+      print(stdout.decode("utf-8"))
+      print(stderr.decode("utf-8"))
+
+  result = None
+  for l in stdout.splitlines():
+    l = l.decode('utf-8')
+    if l.startswith('VERIFICATION_RESULT: '):
+      (_, result) = l.split()
+
+  if result == "TIMEOUT":
+    result = status_timeout
+  elif result == "VERIFIED":
+    result = status_verified
+  elif result == "ERROR":
+    result = status_error
+  elif result == "OVERFLOW":
+    result = status_overflow
+  elif result == "REACHABLE":
+    result = status_reachable
+  elif result == "UNKNOWN":
+    result = status_unknown
+  else:
+    print(f"ERROR: unrecognized status returned by cargo-verify '{result}'")
+    result = status_unknown
+
+  if result != status_verified:
+    print(result)
+  exit(0)
 
 if __name__=="__main__":
   main()
