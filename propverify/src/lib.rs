@@ -4,10 +4,12 @@ pub mod prelude {
     pub use crate::proptest;
     pub use crate::strategy::of;
     pub use crate::strategy::{maybe_ok, maybe_err};
+    pub use crate::strategy::prop_is_replay;
     pub use crate::strategy::Just;
     pub use crate::strategy::Strategy;
 
     pub mod prop {
+        pub use crate::strategy::prop_is_replay;
         pub use crate::strategy::{uniform0,  uniform1,  uniform2,  uniform3,  uniform4};
         pub use crate::strategy::{uniform5,  uniform6,  uniform7,  uniform8,  uniform9};
         pub use crate::strategy::{uniform10, uniform11, uniform12, uniform13, uniform14};
