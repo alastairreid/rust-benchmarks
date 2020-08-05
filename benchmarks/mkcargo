@@ -27,10 +27,13 @@ version = '0.0.1'
     propverify  = "../../propverify"
     if backend == "klee":
       f.write("""
+[features]
+verifier-klee = []
+
 [dependencies]
 klee-annotations = { path = "%s" }
 verifier = { path = "%s", features = [ "verifier-klee" ] }
-proptest = { path = "%s", package = 'propverify', features=[] }
+proptest = { path = "%s", package = 'propverify', features=["verifier-klee"] }
             """ % (annotations, verifier, propverify))
     else:
       f.write("""
