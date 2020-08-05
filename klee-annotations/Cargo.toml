@@ -9,6 +9,3 @@ keywords = ["klee"]
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-
-[profile.dev]
-codegen-units = 1
