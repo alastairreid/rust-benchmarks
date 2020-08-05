@@ -158,7 +158,7 @@ macro_rules! proptest {
       $(#[$meta])*
       fn $test_name() {
           $(let $parm = $crate::prelude::Strategy::value(&$strategy);)*
-          if klee_annotations::verifier_is_replay() {
+          if verifier_is_replay() {
               $(println!("  Value {} = {:?}", std::stringify!($parm), $parm);)*
           }
           $body
