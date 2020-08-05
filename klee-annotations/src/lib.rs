@@ -72,7 +72,7 @@ pub fn verifier_report_error(message: &str) -> ! {
 // (In part because pthread support is broken at the moment)
 // we only want to display values when running with the ktest runtime
 // so we need a way to tell which mode we are running in.
-pub fn verifier_is_ktest() -> bool {
+pub fn verifier_is_replay() -> bool {
     #[link(name = "kleeRuntest")]
     extern "C" { fn klee_is_replay() -> i32; }
     unsafe { klee_is_replay() != 0 }
