@@ -31,30 +31,6 @@ version = '0.0.1'
 klee-annotations = { path = "%s" }
 verifier = { path = "%s", features = [ "verifier-klee" ] }
 proptest = { path = "%s", package = 'propverify', features=[] }
-
-[profile.dev]
-overflow-checks=true
-lto=true
-panic="abort"
-# incremental=false
-opt-level=1
-debug=false
-debug-assertions=true
-# overflow-checks=true
-rpath=false
-codegen-units=1
-
-[profile.test]
-overflow-checks=true
-lto=true
-# panic="abort"
-# incremental=false
-opt-level=1
-debug=false
-debug-assertions=true
-# overflow-checks=true
-rpath=false
-codegen-units=1
             """ % (annotations, verifier, propverify))
     else:
       f.write("""

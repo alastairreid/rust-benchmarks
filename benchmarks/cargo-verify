@@ -75,10 +75,13 @@ def compile(label, crate, targetdir, runtests, verbose):
       '-Copt-level=1',         # Avoid generating SSE instructions
                                # Any value except 0 seems to work
 
+      # '-Ccodegen-units=1',     # Optimize a bit more?
+
       '-Zpanic_abort_tests',   # Panic abort is simpler
       '-Cpanic=abort',
 
       '-Warithmetic-overflow', # Detecting errors is good!
+      '-Coverflow-checks=yes',
 
       '-Cno-vectorize-loops',  # KLEE does not support vector intrinisics
       '-Cno-vectorize-slp',
