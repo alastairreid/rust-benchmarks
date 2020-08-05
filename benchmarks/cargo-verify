@@ -269,7 +269,7 @@ def klee_run(bcfile, entry, crate, kleeout, klee_flags, verbose):
 
 
 # Replay a KLEE "ktest" file
-def replay_klee(ktest, crate, runtests):
+def replay_klee(ktest, name, crate, runtests):
   cmd = []
   cmd.append("/usr/bin/env")
   if runtests:
@@ -310,7 +310,7 @@ def klee_verify(bcfile, name, test, crate, runtests, flags, verbose):
   if verbose > 1:
     for ktest in sorted(glob.glob(f"{kleeout}/test*.ktest")):
       print(f"    Test input {ktest}")
-      replay_klee(ktest, crate, runtests)
+      replay_klee(ktest, name, crate, runtests)
   return status
 
 
@@ -370,7 +370,7 @@ def verify(label, crate, runtests, verifier_flags, verbose, features, backend):
   if runtests:
     # get a list of the tests
     if verbose > 2: print(f"  Getting list of tests in {label}")
-    tests = list_tests(crate, verbose)
+    tests = list_tests(crate, verbose, features)
     if not tests:
       print("No tests found")
       return status_unknown
