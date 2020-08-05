@@ -1,23 +1,25 @@
-#![cfg_attr(feature = "verifier-panic-handler", feature(panic_info_message))]
-
-use std::os::raw;
 use std::default::Default;
+use std::os::raw;
 
-pub fn verifier_assume(cond: bool) {
-    extern "C" { fn klee_assume(cond: usize); }
-    unsafe { klee_assume(if cond {1} else {0}) }
+#[link(name = "kleeRuntest")]
+extern "C" {
+    fn klee_make_symbolic(data: *mut raw::c_void, length: usize, name: *const raw::c_char);
+    fn klee_assume(cond: usize);
+    fn klee_abort() -> !;
+    fn klee_silent_exit(_ignored: u32) -> !;
+    fn klee_is_replay() -> i32;
 }
 
-pub fn verifier_verify(cond: bool) {
-    if !cond {
-        verifier_report_error("verification failed")
-    }
-}
-
+// Create an abstract value of type <T>
+//
+// This should only be used on types that occupy contiguous memory
+// and where all possible bit-patterns are legal.
+// e.g., u8/i8, ... u128/i128, f32/f64
 pub fn verifier_abstract_value<T: Default>(_t: T) -> T {
-    #[link(name = "kleeRuntest")]
-    extern "C" { fn klee_make_symbolic(data: *mut raw::c_void, length: usize, name: *const raw::c_char); }
-
+    // The value '_t' is currently ignored.
+    // It could be used to initialize 'r' instead but that
+    // could be confusing while debugging the library so
+    // using T::default() seemed to be safer?
     let mut r = T::default();
     unsafe {
         let data   = std::mem::transmute(&mut r);
@@ -28,13 +30,16 @@ pub fn verifier_abstract_value<T: Default>(_t: T) -> T {
     return r;
 }
 
+// Add an assumption
+pub fn verifier_assume(cond: bool) {
+    unsafe { klee_assume(if cond {1} else {0}) }
+}
+
 // Reject the current execution with a verification failure.
 //
 // In almost all circumstances, verifier_report_error should
 // be used instead because it generates an error message.
 pub fn verifier_abort() -> ! {
-    extern "C" { fn klee_abort() -> !; }
-
     unsafe { klee_abort() }
 }
 
@@ -45,35 +50,32 @@ pub fn verifier_abort() -> ! {
 // Typical usage is in generating symbolic values when the value
 // does not meet some criteria.
 pub fn verifier_reject() -> ! {
-    extern "C" { fn klee_silent_exit(_ignored: u32) -> !; }
     unsafe { klee_silent_exit(0) }
+}
+
+// Detect whether the program is being run symbolically in KLEE
+// or being replayed using the kleeRuntest runtime.
+//
+// This is used to decide whether to display the values of
+// variables that may be either symbolic or concrete.
+pub fn verifier_is_replay() -> bool {
+    unsafe { klee_is_replay() != 0 }
 }
 
 // Reject the current execution with a verification failure
 // and an error message.
-//
-// This originally used the function "klee_report_error"
-// but this is not supported by the KLEE runtest library
 pub fn verifier_report_error(message: &str) -> ! {
-    extern "C" {
-        fn write(fd: isize, s: *const u8, count: usize);
-    }
-    let prefix  = "KLEE: ERROR:".as_bytes();
-    let message = message.as_bytes();
-    let newline = "\n".as_bytes();
-    unsafe {
-        write(2, prefix.as_ptr(),  prefix.len());
-        write(2, message.as_ptr(), message.len());
-        write(2, newline.as_ptr(), newline.len());
-        verifier_abort();
+    // Mimic the format of klee_report_error
+    // (We don't use klee_report_error because it is not
+    // supported by the kleeRuntest library.)
+    eprintln!("KLEE: ERROR:{}", message);
+    verifier_abort();
+}
+
+// Check an assertion
+pub fn verifier_verify(cond: bool) {
+    if !cond {
+        verifier_report_error("verification failed");
     }
 }
 
-// (In part because pthread support is broken at the moment)
-// we only want to display values when running with the ktest runtime
-// so we need a way to tell which mode we are running in.
-pub fn verifier_is_replay() -> bool {
-    #[link(name = "kleeRuntest")]
-    extern "C" { fn klee_is_replay() -> i32; }
-    unsafe { klee_is_replay() != 0 }
-}
