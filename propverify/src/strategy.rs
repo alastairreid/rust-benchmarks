@@ -3,6 +3,8 @@ use klee_annotations as verifier;
 
 use std::marker::PhantomData;
 use std::sync::Arc;
+use std::boxed::Box;
+use std::rc::Rc;
 
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque, LinkedList};
 // use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque};
@@ -355,10 +357,27 @@ impl<S: Strategy> Strategy for Union<S> {
     }
 }
 
+macro_rules! proxy_strategy {
+    ($typ:ty $(, $lt:tt)*) => {
+        impl<$($lt,)* S : Strategy + ?Sized> Strategy for $typ {
+            type Value = S::Value;
+
+            fn value(&self) -> Self::Value {
+                (**self).value()
+            }
+        }
+    };
+}
+proxy_strategy!(Box<S>);
+proxy_strategy!(&'a S, 'a);
+proxy_strategy!(&'a mut S, 'a);
+proxy_strategy!(Rc<S>);
+proxy_strategy!(Arc<S>);
+
 pub struct BoxedStrategy<T> {
     b: Box<dyn Strategy<Value = T>>
 }
-impl<T: Strategy> Strategy for BoxedStrategy<T>
+impl<T> Strategy for BoxedStrategy<T>
 {
     type Value = T;
     fn value(&self) -> Self::Value {
