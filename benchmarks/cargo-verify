@@ -5,6 +5,7 @@ import glob
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import toml
@@ -110,17 +111,23 @@ def find_void_functions(bcfile, paths, verbose):
 #
 # Todo: as more backends are supported, this function is likely
 # to need some modification.
-def compile(label, crate, runtests, verbose, rustflags, features):
+def compile(label, crate, runtests, verbose, rustflags, features, target):
   targetdir = get_targetdir(crate, features)
 
   flags = features
   if verbose: flags.append("-v")
   if runtests: flags.append("--tests")
+  if False: flags.append("-Zbuild-std") # custom build libstd
+
+  # The following line is not present because we care about the target
+  # It is there to allow us to use -Clto to build crates whose dependencies
+  # invoke proc_macros.
+  flags.append(f"--target=={target}")
 
   process = subprocess.Popen(['/usr/bin/env', 'cargo', 'build'] + flags,
                              cwd=crate,
                              env = { "RUSTFLAGS": " ".join(rustflags)
-                                    , "PATH": os.environ["PATH"] },
+                                   , "PATH": os.environ["PATH"] },
                              stdout=subprocess.PIPE, 
                              stderr=subprocess.PIPE)
   stdout, stderr = process.communicate()
@@ -133,7 +140,7 @@ def compile(label, crate, runtests, verbose, rustflags, features):
         print(stderr.decode("utf-8"))
     return None
 
-  bcfile = glob.glob(f"{targetdir}/debug/deps/{label}*.bc")[0]
+  bcfile = glob.glob(f"{targetdir}/{target}/debug/deps/{label}*.bc")[0]
   return bcfile
 
 
@@ -275,10 +282,10 @@ def replay_klee(ktest, name, crate, runtests):
   if runtests:
     cmd.extend(["cargo", "test"])
     cmd.append(name)
+    cmd.append('--')
+    cmd.append('--nocapture')
   else:
     cmd.extend(["cargo", "run"])
-  cmd.append('--')
-  cmd.append('--nocapture')
 
   process = subprocess.Popen(cmd,
                              env = {
@@ -297,6 +304,7 @@ def replay_klee(ktest, name, crate, runtests):
 # values that will trigger that path.
 def klee_verify(bcfile, name, test, crate, runtests, flags, verbose):
   kleeout = os.path.abspath(f"{crate}/kleeout-{name}")
+  shutil.rmtree(kleeout, ignore_errors=True)
   if os.path.exists(kleeout):
     print(f"Unable to create file {kleeout}")
     return status_unknown
@@ -335,7 +343,7 @@ def verifier_run(bcfile, name, entry, crate, runtests, flags, verbose, backend):
 
 # Compile a Rust crate to generate bitcode
 # and run one of the LLVM verifier backends on the result.
-def verify(label, crate, runtests, verifier_flags, verbose, features, backend):
+def verify(label, crate, runtests, verifier_flags, verbose, features, target, backend):
 
   # Compile and link the patched file using LTO to generate the entire
   # application in a single LLVM file
@@ -358,10 +366,10 @@ def verify(label, crate, runtests, verifier_flags, verbose, features, backend):
 
       '-Cno-vectorize-loops',  # KLEE does not support vector intrinisics
       '-Cno-vectorize-slp',
-      '-Ctarget-feature=-sse',
+      '-Ctarget-feature=-mmx,-sse,-sse2,-sse3,-ssse3,-sse4.1,-sse4.2,-3dnow,-3dnowa,-avx,-avx2',
   ]
 
-  bcfile = compile(label, crate, runtests, verbose, rustflags, features)
+  bcfile = compile(label, crate, runtests, verbose, rustflags, features, target)
   if bcfile is None:
     if verbose: print(colored(f"  FAILED: Test {label} compilation error", 'red'))
     return status_unknown
@@ -424,7 +432,8 @@ def main():
     if verbose: print(f"  Invoking cargo run with proptest backend")
     status = run_proptest(args.crate)
   else:
-    status = verify(label, args.crate, args.tests, args.klee_flags, args.verbose, features, args.backend)
+    target = "x86_64-unknown-linux-gnu" # todo: whatever the default target on this platform is
+    status = verify(label, args.crate, args.tests, args.klee_flags, args.verbose, features, target, args.backend)
 
   print(f"VERIFICATION_RESULT: {status}")
 
