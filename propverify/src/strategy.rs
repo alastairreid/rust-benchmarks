@@ -178,6 +178,18 @@ macro_rules! proptest {
   };
 }
 
+// Combine multiple strategies into a single strategy
+#[macro_export]
+macro_rules! prop_oneof {
+    ($item:expr $(,)?) => {
+        std::sync::Arc::new($item).boxed()
+    };
+    ($first:expr, $($rest:expr),* $(,)?) => {
+        $crate::prelude::Strategy::prop_union(std::sync::Arc::new($first).boxed(), $crate::prop_oneof![$($rest),*])
+    };
+}
+
+
 // The remainder of this file consists of implementations of the Strategy trait.
 // In most cases, this consists of defining a new struct type to represent
 // the strategy, defining functions to construct that struct type and

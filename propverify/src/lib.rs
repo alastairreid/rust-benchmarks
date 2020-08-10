@@ -2,6 +2,7 @@ mod strategy;
 
 pub mod prelude {
     pub use crate::proptest;
+    pub use crate::prop_oneof;
     pub use crate::strategy::of;
     pub use crate::strategy::{maybe_ok, maybe_err};
     pub use crate::strategy::prop_is_replay;
