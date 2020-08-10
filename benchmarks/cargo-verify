@@ -117,7 +117,6 @@ def compile(label, crate, runtests, verbose, rustflags, features, target):
   flags = features
   if verbose: flags.append("-v")
   if runtests: flags.append("--tests")
-  if False: flags.append("-Zbuild-std") # custom build libstd
 
   # The following line is not present because we care about the target
   # It is there to allow us to use -Clto to build crates whose dependencies
@@ -215,7 +214,7 @@ def klee_run(bcfile, entry, crate, kleeout, klee_flags, verbose):
                              stderr=subprocess.PIPE)
   stdout, stderr = process.communicate()
 
-  if stdout: print(stdout.decode("utf-8"))
+  if stdout: print(stdout)
   if verbose > 3:  print(stderr.decode("utf-8")) # useful line for desperate debugging
   for l in stderr.splitlines():
     if l.startswith(b"KLEE: output directory"):
@@ -343,7 +342,7 @@ def verifier_run(bcfile, name, entry, crate, runtests, flags, verbose, backend):
 
 # Compile a Rust crate to generate bitcode
 # and run one of the LLVM verifier backends on the result.
-def verify(label, crate, runtests, verifier_flags, verbose, features, target, backend):
+def verify(label, crate, runtests, testfilter, verifier_flags, verbose, features, target, backend):
 
   # Compile and link the patched file using LTO to generate the entire
   # application in a single LLVM file
@@ -379,6 +378,8 @@ def verify(label, crate, runtests, verifier_flags, verbose, features, target, ba
     # get a list of the tests
     if verbose > 2: print(f"  Getting list of tests in {label}")
     tests = list_tests(crate, verbose, features)
+    if testfilter:
+      tests = [ t for t in tests if any([ t.startswith(f) for f in testfilter ]) ]
     if not tests:
       print("No tests found")
       return status_unknown
@@ -418,12 +419,13 @@ def main():
   parser.add_argument('--verbose', '-v', action='count', default=0)
   parser.add_argument('--tests', action='store_true', default=False,
                       help='run #[test]s instead of main')
+  parser.add_argument('--test', nargs="*", help='select tests to run')
   parser.add_argument('crate', help='crate to verify')
   parser.add_argument('klee_flags', nargs="*", help='extra verification flags')
   args = parser.parse_args()
 
   features = []
-  if args.backend == "klee": features.extend(['--features', 'verifier-klee'])
+  # if args.backend == "klee": features.extend(['--features', 'verifier-klee'])
 
   label = get_packagename(args.crate)
   if args.verbose: print(f"Checking {colored(label, 'white', attrs=['bold'])}")
@@ -433,7 +435,7 @@ def main():
     status = run_proptest(args.crate)
   else:
     target = "x86_64-unknown-linux-gnu" # todo: whatever the default target on this platform is
-    status = verify(label, args.crate, args.tests, args.klee_flags, args.verbose, features, target, args.backend)
+    status = verify(label, args.crate, args.tests or args.test is not None, args.test, args.klee_flags, args.verbose, features, target, args.backend)
 
   print(f"VERIFICATION_RESULT: {status}")
 
