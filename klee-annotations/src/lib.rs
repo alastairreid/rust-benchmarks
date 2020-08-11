@@ -1,3 +1,15 @@
+// Copyright 2020 The Propverify authors
+//
+// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
+/////////////////////////////////////////////////////////////////
+// FFI wrapper for KLEE symbolic execution tool
+/////////////////////////////////////////////////////////////////
+
 use std::default::Default;
 use std::os::raw;
 
@@ -79,3 +91,6 @@ pub fn verify(cond: bool) {
     }
 }
 
+/////////////////////////////////////////////////////////////////
+// End
+/////////////////////////////////////////////////////////////////
