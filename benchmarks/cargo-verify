@@ -431,7 +431,7 @@ def main():
   args = parser.parse_args()
 
   features = []
-  # if args.backend == "klee": features.extend(['--features', 'verifier-klee'])
+  if args.backend == "klee": features.extend(['--features', 'verifier-klee'])
 
   label = get_packagename(args.crate)
   if args.verbose: print(f"Checking {colored(label, 'white', attrs=['bold'])}")
