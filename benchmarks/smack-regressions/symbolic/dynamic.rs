@@ -64,17 +64,19 @@ proptest!{
     }
 }
 
-// Slightly awkward dance so that the code can be run using 'cargo test'
-// or using 'cargo run' depending on which you prefer.
-#[test]
-fn t1() { dynamic(); }
-
-#[test]
-fn t2() { dynamic_union(); }
+proptest!{
+    fn dynamic_oneof(r in prop_oneof![
+                             (0..10i8).prop_map(a_to_foo),
+                             (1000i16..).prop_map(b_to_foo)]) {
+        // println!("r = {:?}", r);
+        assert!(r.foo() < 10 || r.foo() > 100);
+    }
+}
 
 fn main() {
     dynamic();
     dynamic_union();
+    dynamic_oneof();
 }
 
 ////////////////////////////////////////////////////////////////
