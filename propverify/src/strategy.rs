@@ -10,12 +10,12 @@
 #[cfg(feature = "verifier-klee")]
 use klee_annotations as verifier;
 
-use std::marker::PhantomData;
-use std::sync::Arc;
 use std::boxed::Box;
+use std::marker::PhantomData;
 use std::rc::Rc;
+use std::sync::Arc;
 
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque, LinkedList};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, LinkedList, VecDeque};
 // use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, LinkedList, VecDeque};
 
 // Trait representing a set of values from which one can be chosen
@@ -36,10 +36,7 @@ pub trait Strategy {
     type Value;
     fn value(&self) -> Self::Value;
 
-    fn prop_map<O, F: Fn(Self::Value) -> O>(
-        self,
-        fun: F,
-    ) -> Map<Self, F>
+    fn prop_map<O, F: Fn(Self::Value) -> O>(self, fun: F) -> Map<Self, F>
     where
         Self: Sized,
     {
@@ -60,10 +57,7 @@ pub trait Strategy {
         }
     }
 
-    fn prop_flat_map<S: Strategy, F: Fn(Self::Value) -> S>(
-        self,
-        fun: F,
-    ) -> Flatten<Map<Self, F>>
+    fn prop_flat_map<S: Strategy, F: Fn(Self::Value) -> S>(self, fun: F) -> Flatten<Map<Self, F>>
     where
         Self: Sized,
     {
@@ -113,11 +107,7 @@ pub trait Strategy {
         }
     }
 
-    fn prop_filter<F: Fn(&Self::Value) -> bool>(
-        self,
-        _whence: &str,
-        fun: F,
-    ) -> Filter<Self, F>
+    fn prop_filter<F: Fn(&Self::Value) -> bool>(self, _whence: &str, fun: F) -> Filter<Self, F>
     where
         Self: Sized,
     {
@@ -145,21 +135,15 @@ pub trait Strategy {
     where
         Self: Sized,
     {
-        Union {
-            x: self,
-            y: other,
-        }
+        Union { x: self, y: other }
     }
 
     fn boxed(self) -> BoxedStrategy<Self::Value>
     where
         Self: Sized + 'static,
     {
-        BoxedStrategy {
-            b: Box::new(self),
-        }
+        BoxedStrategy { b: Box::new(self) }
     }
-
 }
 
 // It appears that if a macro refers to an import that has been renamed
@@ -226,22 +210,37 @@ macro_rules! prop_compose {
 // This macro seems to be several macros combined into one with the
 // outermost @_<tag> selecting which behaivour is actually wanted.
 // I don't understand the motivation behind this yet.
-#[doc(hidden)] 
+#[doc(hidden)]
 #[macro_export]
 macro_rules! proptest_helper {
     // First set of conversions take a list of strategies and convert them to a tuple
-    (@_STRATS2TUPLE ($a:tt)) => { $a };
-    (@_STRATS2TUPLE ($a0:tt $a1:tt)) => { ($a0, $a1) };
-    (@_STRATS2TUPLE ($a0:tt $a1:tt $a2:tt)) => { ($a0, $a1, $a2) };
-    (@_STRATS2TUPLE ($a0:tt $a1:tt $a2:tt $a3:tt)) => { ($a0, $a1, $a2, $a3) };
+    (@_STRATS2TUPLE ($a:tt)) => {
+        $a
+    };
+    (@_STRATS2TUPLE ($a0:tt $a1:tt)) => {
+        ($a0, $a1)
+    };
+    (@_STRATS2TUPLE ($a0:tt $a1:tt $a2:tt)) => {
+        ($a0, $a1, $a2)
+    };
+    (@_STRATS2TUPLE ($a0:tt $a1:tt $a2:tt $a3:tt)) => {
+        ($a0, $a1, $a2, $a3)
+    };
 
     // Second set of conversions take a list of patterns and convert them to a tuple of patterns
     // (The patterns might be simple variables?)
-    (@_PATS2TUPLEPAT ($item:pat)) => { $item };
-    (@_PATS2TUPLEPAT ($a0:pat, $a1:pat)) => { ($a0, $a1) };
-    (@_PATS2TUPLEPAT ($a0:pat, $a1:pat, $a2:pat)) => { ($a0, $a1, $a2) };
-    (@_PATS2TUPLEPAT ($a0:pat, $a1:pat, $a2:pat, $a3:pat)) => { ($a0, $a1, $a2, $a3) };
-
+    (@_PATS2TUPLEPAT ($item:pat)) => {
+        $item
+    };
+    (@_PATS2TUPLEPAT ($a0:pat, $a1:pat)) => {
+        ($a0, $a1)
+    };
+    (@_PATS2TUPLEPAT ($a0:pat, $a1:pat, $a2:pat)) => {
+        ($a0, $a1, $a2)
+    };
+    (@_PATS2TUPLEPAT ($a0:pat, $a1:pat, $a2:pat, $a3:pat)) => {
+        ($a0, $a1, $a2, $a3)
+    };
 }
 
 // The remainder of this file consists of implementations of the Strategy trait.
@@ -249,18 +248,14 @@ macro_rules! proptest_helper {
 // the strategy, defining functions to construct that struct type and
 // then implementing the Strategy trait for that type.
 
-
 // The most trivial strategy
-pub struct Just<T: Clone>(
-    pub T,
-);
+pub struct Just<T: Clone>(pub T);
 impl<T: Clone> Strategy for Just<T> {
     type Value = T;
     fn value(&self) -> Self::Value {
         self.0.clone()
     }
 }
-
 
 impl<T> Strategy for fn() -> T {
     type Value = T;
@@ -269,7 +264,6 @@ impl<T> Strategy for fn() -> T {
         self()
     }
 }
-
 
 pub mod bool {
     use super::*;
@@ -295,12 +289,11 @@ pub mod char {
             let c = verifier::abstract_value(0u32);
             match std::char::from_u32(c) {
                 Some(r) => r,
-                None => verifier::reject()
+                None => verifier::reject(),
             }
         }
     }
 }
-
 
 pub struct Map<S: Strategy, F> {
     source: S,
@@ -313,7 +306,6 @@ impl<S: Strategy, T, F: Fn(S::Value) -> T> Strategy for Map<S, F> {
         (self.fun)(val)
     }
 }
-
 
 pub struct MapInto<S: Strategy, T> {
     source: S,
@@ -330,7 +322,6 @@ where
     }
 }
 
-
 pub struct IndFlatten<S> {
     source: S,
 }
@@ -343,7 +334,6 @@ where
         self.source.value().value()
     }
 }
-
 
 pub struct IndFlattenMap<S, F> {
     source: S,
@@ -361,7 +351,6 @@ where
     }
 }
 
-
 pub struct Flatten<S> {
     source: S,
 }
@@ -376,7 +365,6 @@ where
     }
 }
 
-
 pub struct Filter<S: Strategy, F> {
     source: S,
     fun: Arc<F>,
@@ -390,7 +378,6 @@ impl<S: Strategy, F: Fn(&S::Value) -> bool> Strategy for Filter<S, F> {
     }
 }
 
-
 pub struct FilterMap<S: Strategy, F> {
     source: S,
     fun: Arc<F>,
@@ -401,11 +388,10 @@ impl<S: Strategy, F: Fn(S::Value) -> Option<T>, T> Strategy for FilterMap<S, F> 
         let val = self.source.value();
         match (self.fun)(val) {
             Some(r) => r,
-            None => verifier::reject()
+            None => verifier::reject(),
         }
     }
 }
-
 
 pub struct Union<S: Strategy> {
     x: S,
@@ -440,10 +426,9 @@ proxy_strategy!(Rc<S>);
 proxy_strategy!(Arc<S>);
 
 pub struct BoxedStrategy<T> {
-    b: Box<dyn Strategy<Value = T>>
+    b: Box<dyn Strategy<Value = T>>,
 }
-impl<T> Strategy for BoxedStrategy<T>
-{
+impl<T> Strategy for BoxedStrategy<T> {
     type Value = T;
     fn value(&self) -> Self::Value {
         self.b.value()
@@ -546,19 +531,19 @@ macro_rules! strategic_tuple {
     };
 }
 // todo: It should be possible to write a macro that generates this sequence
-strategic_tuple!{}
+strategic_tuple! {}
 // A Tuple1 instance would create a warning
-strategic_tuple!{0=>A; 1=>B;}
-strategic_tuple!{0=>A; 1=>B; 2=>C;}
-strategic_tuple!{0=>A; 1=>B; 2=>C; 3=>D;}
-strategic_tuple!{0=>A; 1=>B; 2=>C; 3=>D; 4=>E;}
-strategic_tuple!{0=>A; 1=>B; 2=>C; 3=>D; 4=>E; 5=>F;}
-strategic_tuple!{0=>A; 1=>B; 2=>C; 3=>D; 4=>E; 5=>F; 6=>G;}
-strategic_tuple!{0=>A; 1=>B; 2=>C; 3=>D; 4=>E; 5=>F; 6=>G; 7=>H;}
-strategic_tuple!{0=>A; 1=>B; 2=>C; 3=>D; 4=>E; 5=>F; 6=>G; 7=>H; 8=>I;}
-strategic_tuple!{0=>A; 1=>B; 2=>C; 3=>D; 4=>E; 5=>F; 6=>G; 7=>H; 8=>I; 9=>J;}
-strategic_tuple!{0=>A; 1=>B; 2=>C; 3=>D; 4=>E; 5=>F; 6=>G; 7=>H; 8=>I; 9=>J; 10=>K;}
-strategic_tuple!{0=>A; 1=>B; 2=>C; 3=>D; 4=>E; 5=>F; 6=>G; 7=>H; 8=>I; 9=>J; 10=>K; 11=>L;}
+strategic_tuple! {0=>A; 1=>B;}
+strategic_tuple! {0=>A; 1=>B; 2=>C;}
+strategic_tuple! {0=>A; 1=>B; 2=>C; 3=>D;}
+strategic_tuple! {0=>A; 1=>B; 2=>C; 3=>D; 4=>E;}
+strategic_tuple! {0=>A; 1=>B; 2=>C; 3=>D; 4=>E; 5=>F;}
+strategic_tuple! {0=>A; 1=>B; 2=>C; 3=>D; 4=>E; 5=>F; 6=>G;}
+strategic_tuple! {0=>A; 1=>B; 2=>C; 3=>D; 4=>E; 5=>F; 6=>G; 7=>H;}
+strategic_tuple! {0=>A; 1=>B; 2=>C; 3=>D; 4=>E; 5=>F; 6=>G; 7=>H; 8=>I;}
+strategic_tuple! {0=>A; 1=>B; 2=>C; 3=>D; 4=>E; 5=>F; 6=>G; 7=>H; 8=>I; 9=>J;}
+strategic_tuple! {0=>A; 1=>B; 2=>C; 3=>D; 4=>E; 5=>F; 6=>G; 7=>H; 8=>I; 9=>J; 10=>K;}
+strategic_tuple! {0=>A; 1=>B; 2=>C; 3=>D; 4=>E; 5=>F; 6=>G; 7=>H; 8=>I; 9=>J; 10=>K; 11=>L;}
 
 // Array strategy where S is element strategy and T is [S::Value; n] for some n
 pub struct ArrayStrategy<S: Strategy, T> {
@@ -666,7 +651,6 @@ small_array!(32 uniform32: a0, a1, a2, a3, a4, a5, a6, a7, a8, a9,
                            a20, a21, a22, a23, a24, a25, a26, a27, a28, a29,
                            a30, a31);
 
-
 pub struct OptionStrategy<S: Strategy> {
     s: S,
 }
@@ -685,11 +669,8 @@ where
 }
 
 pub fn of<S: Strategy>(s: S) -> OptionStrategy<S> {
-    OptionStrategy {
-        s,
-    }
+    OptionStrategy { s }
 }
-
 
 pub struct ResultStrategy<A: Strategy, B: Strategy> {
     a: A,
@@ -711,19 +692,12 @@ where
 }
 
 pub fn maybe_ok<A: Strategy, B: Strategy>(a: A, b: B) -> ResultStrategy<A, B> {
-    ResultStrategy {
-        a,
-        b,
-    }
+    ResultStrategy { a, b }
 }
 
 pub fn maybe_err<A: Strategy, B: Strategy>(a: A, b: B) -> ResultStrategy<A, B> {
-    ResultStrategy {
-        a,
-        b,
-    }
+    ResultStrategy { a, b }
 }
-
 
 pub struct VecStrategy<S: Strategy> {
     element: S,
@@ -747,16 +721,9 @@ where
     }
 }
 
-pub fn vec<S: Strategy>(
-    element: S,
-    size: usize,
-) -> VecStrategy<S> {
-    VecStrategy {
-        element,
-        size,
-    }
+pub fn vec<S: Strategy>(element: S, size: usize) -> VecStrategy<S> {
+    VecStrategy { element, size }
 }
-
 
 pub struct VecDequeStrategy<S: Strategy> {
     element: S,
@@ -780,16 +747,9 @@ where
     }
 }
 
-pub fn vec_deque<S: Strategy>(
-    element: S,
-    size: usize,
-) -> VecDequeStrategy<S> {
-    VecDequeStrategy {
-        element,
-        size,
-    }
+pub fn vec_deque<S: Strategy>(element: S, size: usize) -> VecDequeStrategy<S> {
+    VecDequeStrategy { element, size }
 }
-
 
 pub struct LinkedListStrategy<S: Strategy> {
     element: S,
@@ -810,14 +770,8 @@ where
     }
 }
 
-pub fn linked_list<S: Strategy>(
-    element: S,
-    size: usize,
-) -> LinkedListStrategy<S> {
-    LinkedListStrategy {
-        element,
-        size,
-    }
+pub fn linked_list<S: Strategy>(element: S, size: usize) -> LinkedListStrategy<S> {
+    LinkedListStrategy { element, size }
 }
 
 pub struct BTreeMapStrategy<K: Strategy, V: Strategy> {
@@ -827,7 +781,7 @@ pub struct BTreeMapStrategy<K: Strategy, V: Strategy> {
 }
 impl<K: Strategy, V: Strategy> Strategy for BTreeMapStrategy<K, V>
 where
-    K::Value : Ord + Copy
+    K::Value: Ord + Copy,
 {
     type Value = BTreeMap<K::Value, V::Value>;
     fn value(&self) -> Self::Value {
@@ -851,19 +805,11 @@ where
     }
 }
 
-pub fn btree_map<K: Strategy, V: Strategy>(
-    keys: K,
-    value: V,
-    size: usize,
-) -> BTreeMapStrategy<K, V>
+pub fn btree_map<K: Strategy, V: Strategy>(keys: K, value: V, size: usize) -> BTreeMapStrategy<K, V>
 where
     K::Value: Ord,
 {
-    BTreeMapStrategy {
-        size,
-        keys,
-        value,
-    }
+    BTreeMapStrategy { size, keys, value }
 }
 
 pub struct BTreeSetStrategy<S: Strategy> {
@@ -872,7 +818,7 @@ pub struct BTreeSetStrategy<S: Strategy> {
 }
 impl<S: Strategy> Strategy for BTreeSetStrategy<S>
 where
-    S::Value : Ord + Copy
+    S::Value: Ord + Copy,
 {
     type Value = BTreeSet<S::Value>;
     fn value(&self) -> Self::Value {
@@ -896,19 +842,12 @@ where
     }
 }
 
-pub fn btree_set<S: Strategy>(
-    element: S,
-    size: usize,
-) -> BTreeSetStrategy<S>
+pub fn btree_set<S: Strategy>(element: S, size: usize) -> BTreeSetStrategy<S>
 where
     S::Value: Ord,
 {
-    BTreeSetStrategy {
-        element,
-        size,
-    }
+    BTreeSetStrategy { element, size }
 }
-
 
 pub struct BinaryHeapStrategy<S: Strategy> {
     element: S,
@@ -916,7 +855,7 @@ pub struct BinaryHeapStrategy<S: Strategy> {
 }
 impl<S: Strategy> Strategy for BinaryHeapStrategy<S>
 where
-    S::Value : Ord + Copy
+    S::Value: Ord + Copy,
 {
     type Value = BinaryHeap<S::Value>;
     fn value(&self) -> Self::Value {
@@ -942,17 +881,9 @@ where
     }
 }
 
-pub fn binary_heap<S: Strategy>(
-    element: S,
-    size: usize,
-    )
--> BinaryHeapStrategy<S>
+pub fn binary_heap<S: Strategy>(element: S, size: usize) -> BinaryHeapStrategy<S>
 where
     S::Value: Ord,
 {
-    BinaryHeapStrategy {
-        element,
-        size,
-    }
+    BinaryHeapStrategy { element, size }
 }
-

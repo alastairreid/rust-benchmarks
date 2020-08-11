@@ -34,7 +34,7 @@ pub fn abstract_value<T: Default>(_t: T) -> T {
     // using T::default() seemed to be safer?
     let mut r = T::default();
     unsafe {
-        let data   = std::mem::transmute(&mut r);
+        let data = std::mem::transmute(&mut r);
         let length = std::mem::size_of::<T>();
         let null = 0 as *const i8;
         klee_make_symbolic(data, length, null)
@@ -44,7 +44,7 @@ pub fn abstract_value<T: Default>(_t: T) -> T {
 
 // Add an assumption
 pub fn assume(cond: bool) {
-    unsafe { klee_assume(if cond {1} else {0}) }
+    unsafe { klee_assume(if cond { 1 } else { 0 }) }
 }
 
 // Reject the current execution with a verification failure.
