@@ -1,8 +1,11 @@
+#[cfg(feature = "verifier-klee")]
+pub use klee_annotations as annotations;
+
 #[macro_export]
 macro_rules! assume {
     ($condition:expr) => {
         if cfg!(feature = "verifier-klee") {
-            klee_annotations::verifier_assume($condition)
+            $crate::annotations::assume($condition)
         } else {
             assert!($condition);
         }
@@ -13,7 +16,7 @@ macro_rules! assume {
 macro_rules! assert {
     ($condition:expr) => {
         if cfg!(feature = "verifier-klee") {
-            klee_annotations::verifier_verify($condition)
+            $crate::annotations::verify($condition)
         } else {
             assert!($condition);
         }
@@ -24,7 +27,7 @@ macro_rules! assert {
 macro_rules! assert_eq {
     ($left:expr, $right:expr) => (
         if cfg!(feature = "verifier-klee") {
-            klee_annotations::verifier_verify($left == $right)
+            $crate::annotations::verify($left == $right)
         } else {
             assert_eq!($left, $right);
         }
@@ -35,7 +38,7 @@ macro_rules! assert_eq {
 macro_rules! assert_ne {
     ($left:expr, $right:expr) => (
         if cfg!(feature = "verifier-klee") {
-            klee_annotations::verifier_verify($left != $right)
+            $crate::annotations::verify($left != $right)
         } else {
             assert!($left != $right);
         }
@@ -46,7 +49,7 @@ macro_rules! assert_ne {
 macro_rules! unreachable {
     () => (
         if cfg!(feature = "verifier-klee") {
-            klee_annotations::verifier_report_error("unreachable");
+            $crate::annotations::report_error("unreachable");
         } else {
             unreachable!();
         }
@@ -57,7 +60,7 @@ macro_rules! unreachable {
 macro_rules! nondet {
     ($value:expr) => {
         if cfg!(feature = "verifier-klee") {
-            klee_annotations::verifier_abstract_value($value)
+            $crate::annotations::abstract_value($value)
         } else {
             $value
         }

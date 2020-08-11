@@ -1,3 +1,15 @@
+// Copyright 2020 Google LLC
+//
+// Based on parts of Proptest which is
+//
+//   Copyright 2017, 2018 Jason Lingle
+//
+// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
+
 #[cfg(feature = "verifier-klee")]
 use klee_annotations as verifier;
 
@@ -158,7 +170,7 @@ pub trait Strategy {
 // but it can refer to functions defined in the same crate as the macro.
 // So this is a small stub redirects to verifier_is_replay.
 pub fn prop_is_replay() -> bool {
-    verifier::verifier_is_replay()
+    verifier::is_replay()
 }
 
 #[macro_export]
@@ -185,10 +197,55 @@ macro_rules! prop_oneof {
         std::sync::Arc::new($item).boxed()
     };
     ($first:expr, $($rest:expr),* $(,)?) => {
-        $crate::prelude::Strategy::prop_union(std::sync::Arc::new($first).boxed(), $crate::prop_oneof![$($rest),*])
+        $crate::prelude::Strategy::prop_union(std::sync::Arc::new($first).boxed(), $crate::prop_oneof![$($rest),*]).boxed()
     };
 }
 
+// Defining complex strategies
+#[macro_export]
+macro_rules! prop_compose {
+    ($(#[$meta:meta])*
+     $vis:vis
+     $([$($modi:tt)*])? fn $name:ident $params:tt
+     ($($var:pat in $strategy:expr),+ $(,)?)
+       -> $return_type:ty $body:block
+    ) => {
+        #[must_use = "strategies do nothing unless used"]
+        $(#[$meta])*
+        $vis
+        $($($modi)*)? fn $name $params
+                 -> impl $crate::prelude::Strategy<Value = $return_type> {
+            let strat = $crate::proptest_helper!(@_STRATS2TUPLE ($($strategy)*));
+            $crate::prelude::Strategy::prop_map(strat,
+                move |$crate::proptest_helper!(@_PATS2TUPLEPAT ($($var),*))| $body)
+        }
+    };
+}
+
+// Support macro to help write prop_compose
+// (Somewhat reduced from the proptest version of this macro
+// to make it easier for me to grasp what it does.)
+//
+// This macro seems to be several macros combined into one with the
+// outermost @_<tag> selecting which behaivour is actually wanted.
+// I don't understand the motivation behind this yet.
+#[doc(hidden)] 
+#[macro_export]
+macro_rules! proptest_helper {
+    // First set of conversions take a list of strategies and convert them to a tuple
+    (@_STRATS2TUPLE ($a:tt)) => { $a };
+    (@_STRATS2TUPLE ($a0:tt $a1:tt)) => { ($a0, $a1) };
+    (@_STRATS2TUPLE ($a0:tt $a1:tt $a2:tt)) => { ($a0, $a1, $a2) };
+    (@_STRATS2TUPLE ($a0:tt $a1:tt $a2:tt $a3:tt)) => { ($a0, $a1, $a2, $a3) };
+
+    // Second set of conversions take a list of patterns and convert them to a tuple of patterns
+    // (The patterns might be simple variables?)
+    (@_PATS2TUPLEPAT ($item:pat)) => { $item };
+    (@_PATS2TUPLEPAT ($a0:pat, $a1:pat)) => { ($a0, $a1) };
+    (@_PATS2TUPLEPAT ($a0:pat, $a1:pat, $a2:pat)) => { ($a0, $a1, $a2) };
+    (@_PATS2TUPLEPAT ($a0:pat, $a1:pat, $a2:pat, $a3:pat)) => { ($a0, $a1, $a2, $a3) };
+
+}
 
 // The remainder of this file consists of implementations of the Strategy trait.
 // In most cases, this consists of defining a new struct type to represent
@@ -217,33 +274,32 @@ impl<T> Strategy for fn() -> T {
 }
 
 
-pub struct Any<T> {
-    _marker: PhantomData<T>,
-}
-impl<T> Any<T> {
-    pub fn new() -> Self {
-        Self {
-            _marker: PhantomData,
+pub mod bool {
+    use super::*;
+    pub struct Any(());
+    pub const ANY: Any = Any(());
+    impl Strategy for Any {
+        type Value = bool;
+        fn value(&self) -> Self::Value {
+            let c = verifier::abstract_value(0u8);
+            verifier::assume(c == 0 || c == 1);
+            c == 1
         }
     }
 }
 
-impl Strategy for Any<bool> {
-    type Value = bool;
-    fn value(&self) -> Self::Value {
-        let c = verifier::verifier_abstract_value(0u8);
-        verifier::verifier_assume(c == 0 || c == 1);
-        c == 1
-    }
-}
-
-impl Strategy for Any<char> {
-    type Value = char;
-    fn value(&self) -> Self::Value {
-        let c = verifier::verifier_abstract_value(0u32);
-        match std::char::from_u32(c) {
-            Some(r) => r,
-            None => verifier::verifier_reject()
+pub mod char {
+    use super::*;
+    pub struct Any(());
+    pub const ANY: Any = Any(());
+    impl Strategy for Any {
+        type Value = char;
+        fn value(&self) -> Self::Value {
+            let c = verifier::abstract_value(0u32);
+            match std::char::from_u32(c) {
+                Some(r) => r,
+                None => verifier::reject()
+            }
         }
     }
 }
@@ -332,7 +388,7 @@ impl<S: Strategy, F: Fn(&S::Value) -> bool> Strategy for Filter<S, F> {
     type Value = S::Value;
     fn value(&self) -> Self::Value {
         let val = self.source.value();
-        verifier::verifier_assume((self.fun)(&val));
+        verifier::assume((self.fun)(&val));
         val
     }
 }
@@ -348,7 +404,7 @@ impl<S: Strategy, F: Fn(S::Value) -> Option<T>, T> Strategy for FilterMap<S, F> 
         let val = self.source.value();
         match (self.fun)(val) {
             Some(r) => r,
-            None => verifier::verifier_reject()
+            None => verifier::reject()
         }
     }
 }
@@ -361,7 +417,7 @@ pub struct Union<S: Strategy> {
 impl<S: Strategy> Strategy for Union<S> {
     type Value = S::Value;
     fn value(&self) -> Self::Value {
-        if verifier::verifier_abstract_value(0u8) == 0 {
+        if verifier::abstract_value(0u8) == 0 {
             self.x.value()
         } else {
             self.y.value()
@@ -398,14 +454,27 @@ impl<T> Strategy for BoxedStrategy<T>
 }
 
 macro_rules! numeric_api {
-    ( $( $typ:ty; )* ) => {
+    ( $( $typ:ident; )* ) => {
         $(
+            pub mod $typ {
+                use super::*;
+                pub struct Any(());
+                pub const ANY: Any = Any(());
+                impl Strategy for Any {
+                    type Value = $typ;
+                    fn value(&self) -> Self::Value {
+                        let r = verifier::abstract_value(<$typ>::default());
+                        r
+                    }
+                }
+            }
+
             impl Strategy for ::core::ops::Range<$typ> {
                 type Value = $typ;
                 fn value(&self) -> Self::Value {
-                    let r = verifier::verifier_abstract_value(<$typ>::default());
-                    verifier::verifier_assume(self.start <= r);
-                    verifier::verifier_assume(r < self.end);
+                    let r = verifier::abstract_value(<$typ>::default());
+                    verifier::assume(self.start <= r);
+                    verifier::assume(r < self.end);
                     r
                 }
             }
@@ -413,9 +482,9 @@ macro_rules! numeric_api {
             impl Strategy for ::core::ops::RangeInclusive<$typ> {
                 type Value = $typ;
                 fn value(&self) -> Self::Value {
-                    let r = verifier::verifier_abstract_value(<$typ>::default());
-                    verifier::verifier_assume(*self.start() <= r);
-                    verifier::verifier_assume(r <= *self.end());
+                    let r = verifier::abstract_value(<$typ>::default());
+                    verifier::assume(*self.start() <= r);
+                    verifier::assume(r <= *self.end());
                     r
                 }
             }
@@ -423,8 +492,8 @@ macro_rules! numeric_api {
             impl Strategy for ::core::ops::RangeFrom<$typ> {
                 type Value = $typ;
                 fn value(&self) -> Self::Value {
-                    let r = verifier::verifier_abstract_value(<$typ>::default());
-                    verifier::verifier_assume(self.start <= r);
+                    let r = verifier::abstract_value(<$typ>::default());
+                    verifier::assume(self.start <= r);
                     r
                 }
             }
@@ -432,8 +501,8 @@ macro_rules! numeric_api {
             impl Strategy for ::core::ops::RangeTo<$typ> {
                 type Value = $typ;
                 fn value(&self) -> Self::Value {
-                    let r = verifier::verifier_abstract_value(<$typ>::default());
-                    verifier::verifier_assume(r < self.end);
+                    let r = verifier::abstract_value(<$typ>::default());
+                    verifier::assume(r < self.end);
                     r
                 }
             }
@@ -441,8 +510,8 @@ macro_rules! numeric_api {
             impl Strategy for ::core::ops::RangeToInclusive<$typ> {
                 type Value = $typ;
                 fn value(&self) -> Self::Value {
-                    let r = verifier::verifier_abstract_value(<$typ>::default());
-                    verifier::verifier_assume(r <= self.end);
+                    let r = verifier::abstract_value(<$typ>::default());
+                    verifier::assume(r <= self.end);
                     r
                 }
             }
@@ -610,7 +679,7 @@ where
 {
     type Value = Option<S::Value>;
     fn value(&self) -> Self::Value {
-        if Any::<bool>::new().value() {
+        if bool::ANY.value() {
             Some(self.s.value())
         } else {
             None
@@ -636,7 +705,7 @@ where
 {
     type Value = Result<A::Value, B::Value>;
     fn value(&self) -> Self::Value {
-        if Any::<bool>::new().value() {
+        if bool::ANY.value() {
             Ok(self.a.value())
         } else {
             Err(self.b.value())
@@ -778,7 +847,7 @@ where
         for _ in 0..len {
             r.insert(k, self.value.value());
             let next = self.keys.value();
-            verifier::verifier_assume(k <= next); // generate entries in fixed order
+            verifier::assume(k <= next); // generate entries in fixed order
             k = next;
         }
         r
@@ -823,7 +892,7 @@ where
         for _ in 0..len {
             r.insert(k);
             let next = self.element.value();
-            verifier::verifier_assume(k <= next); // generate entries in fixed order
+            verifier::assume(k <= next); // generate entries in fixed order
             k = next;
         }
         r
@@ -869,7 +938,7 @@ where
         for _ in 0..len {
             r.push(k);
             let next = self.element.value();
-            verifier::verifier_assume(k <= next); // generate entries in fixed order
+            verifier::assume(k <= next); // generate entries in fixed order
             k = next;
         }
         r

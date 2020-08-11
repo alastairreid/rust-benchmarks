@@ -15,7 +15,7 @@ extern "C" {
 // This should only be used on types that occupy contiguous memory
 // and where all possible bit-patterns are legal.
 // e.g., u8/i8, ... u128/i128, f32/f64
-pub fn verifier_abstract_value<T: Default>(_t: T) -> T {
+pub fn abstract_value<T: Default>(_t: T) -> T {
     // The value '_t' is currently ignored.
     // It could be used to initialize 'r' instead but that
     // could be confusing while debugging the library so
@@ -31,25 +31,25 @@ pub fn verifier_abstract_value<T: Default>(_t: T) -> T {
 }
 
 // Add an assumption
-pub fn verifier_assume(cond: bool) {
+pub fn assume(cond: bool) {
     unsafe { klee_assume(if cond {1} else {0}) }
 }
 
 // Reject the current execution with a verification failure.
 //
-// In almost all circumstances, verifier_report_error should
+// In almost all circumstances, report_error should
 // be used instead because it generates an error message.
-pub fn verifier_abort() -> ! {
+pub fn abort() -> ! {
     unsafe { klee_abort() }
 }
 
 // Reject the current execution path with a verification success.
-// This is equivalent to verifier_assume(false)
-// and the opposite of verifier_report_error.
+// This is equivalent to assume(false)
+// and the opposite of report_error.
 //
 // Typical usage is in generating symbolic values when the value
 // does not meet some criteria.
-pub fn verifier_reject() -> ! {
+pub fn reject() -> ! {
     unsafe { klee_silent_exit(0) }
 }
 
@@ -58,24 +58,24 @@ pub fn verifier_reject() -> ! {
 //
 // This is used to decide whether to display the values of
 // variables that may be either symbolic or concrete.
-pub fn verifier_is_replay() -> bool {
+pub fn is_replay() -> bool {
     unsafe { klee_is_replay() != 0 }
 }
 
 // Reject the current execution with a verification failure
 // and an error message.
-pub fn verifier_report_error(message: &str) -> ! {
+pub fn report_error(message: &str) -> ! {
     // Mimic the format of klee_report_error
     // (We don't use klee_report_error because it is not
     // supported by the kleeRuntest library.)
     eprintln!("KLEE: ERROR:{}", message);
-    verifier_abort();
+    abort();
 }
 
 // Check an assertion
-pub fn verifier_verify(cond: bool) {
+pub fn verify(cond: bool) {
     if !cond {
-        verifier_report_error("verification failed");
+        report_error("verification failed");
     }
 }
 
