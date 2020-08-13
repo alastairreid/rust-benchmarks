@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-# Copyright 2020 The Propverify authors
+# Copyright 2020 The Rust verification tool Authors
 #
 # Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 # http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -9,13 +9,16 @@
 # except according to those terms.
 
 import argparse
+import concurrent.futures
 import glob
 import json
+import multiprocessing
 import os
 import re
 import shutil
 import subprocess
 import sys
+import threading
 import toml
 
 from termcolor import colored
@@ -111,7 +114,7 @@ def find_void_functions(bcfile, paths, verbose):
         rs.append((t, f))
   if verbose > 3: print(f"      Found {rs}")
   if len(rs) < len(paths):
-    raise "Unable to find all tests"
+    raise Exception("Unable to find tests")
   return rs
 
 # Compile a crate for verification and return a bcfile
@@ -228,6 +231,8 @@ def klee_run(bcfile, entry, crate, kleeout, klee_flags, verbose):
                              stderr=subprocess.PIPE)
   stdout, stderr = process.communicate()
 
+  expect = None # should_panic string
+
   if stdout: print(stdout)
   if verbose > 3:  print(stderr.decode("utf-8")) # useful line for desperate debugging
   for l in stderr.splitlines():
@@ -266,6 +271,16 @@ def klee_run(bcfile, entry, crate, kleeout, klee_flags, verbose):
           else:
             print(l)
       return status_error
+
+    elif l == b'VERIFIER_EXPECT: should_panic':
+      expect = ""
+    elif l.startswith(b'VERIFIER_EXPECT: should_panic(expected = '):
+      m = re.match('VERIFIER_EXPECT: should_panic\(expected = "([^"]*)"\)', l.decode('ascii'))
+      assert m
+      expect = m[1]
+    elif expect and is_expected_panic(l.decode('ascii'), expect, verbose):
+      return status_verified
+
     elif b"assertion failed" in l:
       print(l)
       return status_error
@@ -275,6 +290,7 @@ def klee_run(bcfile, entry, crate, kleeout, klee_flags, verbose):
       return status_overflow
     elif b"note: run with `RUST_BACKTRACE=1`" in l:
       return status_error
+
     elif l != b'':
       print(l)
       return status_unknown
@@ -287,6 +303,18 @@ def klee_run(bcfile, entry, crate, kleeout, klee_flags, verbose):
   # so this really means that no bugs have been found.)
   return status_verified
 
+# Detect lines that match #[should_panic(expected = ...)] string
+def is_expected_panic(l, expect, verbose):
+  m = re.search(" panicked at '([^']*)',\s+(.*)", l)
+  if m:
+    message = m[1]
+    srcloc  = m[2]
+    if expect in message:
+      if verbose:
+        print(f"    Expected failure '{message}', {srcloc}")
+        if verbose > 1: print("      Error message: "+l)
+      return True
+  return False
 
 # Replay a KLEE "ktest" file
 def replay_klee(ktest, name, crate, runtests):
@@ -315,7 +343,7 @@ def replay_klee(ktest, name, crate, runtests):
 
 # Run KLEE and optionally replay all the paths to display the concrete
 # values that will trigger that path.
-def klee_verify(bcfile, name, test, crate, runtests, flags, verbose):
+def klee_verify(bcfile, name, test, crate, runtests, flags, verbose, replay):
   kleeout = os.path.abspath(f"{crate}/kleeout-{name}")
   shutil.rmtree(kleeout, ignore_errors=True)
   if os.path.exists(kleeout):
@@ -328,7 +356,7 @@ def klee_verify(bcfile, name, test, crate, runtests, flags, verbose):
     print(f"      results: {kleeout}")
   status = klee_run(bcfile, test, crate, kleeout, flags, verbose)
 
-  if verbose > 1:
+  if replay:
     for ktest in sorted(glob.glob(f"{kleeout}/test*.ktest")):
       print(f"    Test input {ktest}")
       replay_klee(ktest, name, crate, runtests)
@@ -345,18 +373,18 @@ def klee_verify(bcfile, name, test, crate, runtests, flags, verbose):
 # Invoke one of the supported verification backends on
 # entrypoint 'entry' (with pretty name 'name')
 # in bitcodefile 'bcfile'
-def verifier_run(bcfile, name, entry, crate, runtests, flags, verbose, backend):
+def verifier_run(bcfile, name, entry, crate, runtests, flags, verbose, replay, backend):
   if backend == "klee":
-    status = klee_verify(bcfile, name, entry, crate, runtests, flags, verbose)
+    status = klee_verify(bcfile, name, entry, crate, runtests, flags, verbose, replay)
     return status
   else:
     if verbose: print(f"Unsupported backend {backend}")
-    return status_unknown
+    return (None, status_unknown)
 
 
 # Compile a Rust crate to generate bitcode
 # and run one of the LLVM verifier backends on the result.
-def verify(label, crate, runtests, testfilter, verifier_flags, verbose, features, target, backend):
+def verify(label, crate, runtests, testfilter, verifier_flags, verbose, replay, features, target, backend, jobs):
 
   # Compile and link the patched file using LTO to generate the entire
   # application in a single LLVM file
@@ -406,17 +434,43 @@ def verify(label, crate, runtests, testfilter, verifier_flags, verbose, features
 
   # For each test function, we run KLEE and sift through the KLEE
   # output to generate an appropriate status string
-  for (name, entry) in tests:
-    status = verifier_run(bcfile, name, entry, crate, runtests, verifier_flags, verbose, backend)
+  print(f"Running {len(tests)} test(s)")
+  passes = 0
+  fails = 0
+  failure = None
+  with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as executor:
+    jobs = { executor.submit(verifier_run,
+                             bcfile, name, entry, crate, runtests,
+                             verifier_flags, verbose, replay, backend
+                             ): name
+             for (name, entry) in tests
+           }
+    for future in concurrent.futures.as_completed(jobs):
+      name = jobs[future]
+      status = future.result()
 
-    if status != status_verified:
-      if verbose > 0: print(colored(f"  FAILED: {name} failed verification", 'red'))
-      return status
+      print(f"test {name} ... ", end="")
+      if status == status_verified:
+        print(colored("ok", 'green'))
+      else:
+        print(colored(status, 'red'))
 
-    if verbose: print(colored(f"  PASSED: {name}", 'green'))
+      if status == status_verified:
+        passes = passes + 1
+      else:
+        fails = fails + 1
+        failure = status
 
-  # If every single test passed, return success!
-  return status_verified
+  if fails > 0:
+    status = failure # randomly pick one failing message
+    msg = colored(status, 'red')
+  else:
+    status = status_verified
+    msg = colored("ok", 'green')
+
+  print(f"\ntest result: {msg}. {passes} passed; {fails} failed")
+
+  return status
 
 
 ################################################################
@@ -435,7 +489,11 @@ def main():
                       help='run #[test]s instead of main')
   parser.add_argument('--test', nargs="*", help='select tests to run')
   parser.add_argument('crate', help='crate to verify')
+  parser.add_argument('--jobs', '-j', metavar='N', type=int, default=multiprocessing.cpu_count(),
+                      help='Number of parallel jobs, defaults to # of CPUs')
   parser.add_argument('--klee_flags', nargs="*", default=[], help='extra verification flags')
+  parser.add_argument('--replay', '-r', action='store_true', default=False,
+                      help='replay to display concrete input values')
   args = parser.parse_args()
 
   features = []
@@ -449,7 +507,7 @@ def main():
     status = run_proptest(args.crate, args.tests, args.test, args.verbose, features)
   else:
     target = "x86_64-unknown-linux-gnu" # todo: whatever the default target on this platform is
-    status = verify(label, args.crate, args.tests or args.test is not None, args.test, args.klee_flags, args.verbose, features, target, args.backend)
+    status = verify(label, args.crate, args.tests or args.test is not None, args.test, args.klee_flags, args.verbose, args.replay, features, target, args.backend, args.jobs)
 
   print(f"VERIFICATION_RESULT: {status}")
 

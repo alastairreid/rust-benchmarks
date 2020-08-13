@@ -149,7 +149,7 @@ pub trait Strategy {
 // It appears that if a macro refers to an import that has been renamed
 // using 'use X as Y;', then the macro cannot refer to 'Y::foo'
 // but it can refer to functions defined in the same crate as the macro.
-// So this is a small stub redirects to verifier_is_replay.
+// So this is a small stub redirects to verifier::is_replay.
 pub fn prop_is_replay() -> bool {
     verifier::is_replay()
 }
@@ -162,6 +162,12 @@ macro_rules! proptest {
   ) => {
       $(#[$meta])*
       fn $test_name() {
+          $(
+              let str = stringify!($meta);
+              if str.starts_with("should_panic") {
+                  eprintln!("VERIFIER_EXPECT: {}", str);
+              }
+          )*
           $(let $parm = $crate::prelude::Strategy::value(&$strategy);)*
           if prop_is_replay() {
               $(println!("  Value {} = {:?}", std::stringify!($parm), $parm);)*
